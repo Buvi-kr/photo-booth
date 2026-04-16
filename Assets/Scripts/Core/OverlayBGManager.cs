@@ -139,10 +139,16 @@ public class OverlayBGManager : MonoBehaviour
         int btnCount = bgThumbnailButtons.Length;
         _thumbTextures = new Texture2D[btnCount];
 
+        Debug.Log($"[OverlayBGManager] 썸네일 세팅 시작: 버튼 {btnCount}개, 설정 배경 {count}개");
+
         for (int i = 0; i < btnCount; i++)
         {
             if (i >= count) break;
-            if (bgThumbnailButtons[i] == null) continue;
+            if (bgThumbnailButtons[i] == null)
+            {
+                Debug.LogWarning($"[OverlayBGManager] 버튼 배열의 {i}번 슬롯이 비어있습니다.");
+                continue;
+            }
             
             var bgConf = loader.Config.Backgrounds[i];
             if (bgConf == null || string.IsNullOrEmpty(bgConf.BgName)) continue;
@@ -151,9 +157,17 @@ public class OverlayBGManager : MonoBehaviour
             
             // 1순위: _thumbnail 파일, 2순위: 원본 파일
             string thumbPath = FindBackgroundFile(bgName + "_thumbnail");
-            if (string.IsNullOrEmpty(thumbPath)) thumbPath = FindBackgroundFile(bgName);
+            if (string.IsNullOrEmpty(thumbPath)) 
+            {
+                thumbPath = FindBackgroundFile(bgName);
+                if (string.IsNullOrEmpty(thumbPath))
+                {
+                    Debug.LogWarning($"[Overlay] '{bgName}' 에 해당하는 이미지를 찾을 수 없습니다. (확장자 .png/.jpg/.jpeg 확인)");
+                    continue;
+                }
+            }
 
-            if (!string.IsNullOrEmpty(thumbPath) && File.Exists(thumbPath))
+            try
             {
                 byte[] fileData = File.ReadAllBytes(thumbPath);
                 Texture2D tex = new Texture2D(2, 2, TextureFormat.RGB24, false);
@@ -165,10 +179,19 @@ public class OverlayBGManager : MonoBehaviour
                 if (btnImg != null)
                 {
                     btnImg.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                    Debug.Log($"[Overlay] 버튼 {i}번 이미지 로드 성공: {Path.GetFileName(thumbPath)}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[Overlay] 버튼 '{bgThumbnailButtons[i].name}'에 Image 컴포넌트가 없습니다.");
                 }
             }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Overlay] 이미지 파일 로드 중 오류 발생 ({bgName}): {ex.Message}");
+            }
         }
-        Debug.Log($"[OverlayBGManager] 썸네일 {count}개 로드 완료.");
+        Debug.Log($"[OverlayBGManager] 썸네일 초기화 완료.");
     }
 
     private void LoadAndApplyBackground(string bgName)
