@@ -201,26 +201,19 @@ public class ChromaKeyController : MonoBehaviour
     {
         if (!Input.GetMouseButtonDown(0)) return;
 
-        // 디버그: 색상 추출 조건 체크
         bool webcamOk = _webcamTexture != null && _webcamTexture.isPlaying;
-        bool adminOk = AppStateManager.Instance != null
-                    && AppStateManager.Instance.adminPanel != null
-                    && AppStateManager.Instance.adminPanel.activeSelf;
+        bool pickModeOk = AppStateManager.Instance != null && AppStateManager.Instance.isColorPickingMode;
 
-        if (webcamOk && adminOk)
+        if (webcamOk && pickModeOk)
         {
-            Debug.Log("[ChromaKey] 🖱️ 좌클릭 감지 → 색상 추출 시작");
+            Debug.Log("[ChromaKey] 🖱️ 스포이드 모드 활성 상태에서 좌클릭 감지 → 색상 추출 시작");
             ExtractColorFromMouse();
         }
     }
 
     private void ExtractColorFromMouse()
     {
-        if (_webcamTexture == null || !_webcamTexture.isPlaying)
-        {
-            Debug.LogWarning("[ChromaKey] ❌ 웹캠이 재생 중이 아닙니다");
-            return;
-        }
+        if (_webcamTexture == null || !_webcamTexture.isPlaying) return;
 
         // Screen 좌표 기반 정규화 (Canvas Scaler 영향 받지 않음)
         float nx = Input.mousePosition.x / Screen.width;
@@ -228,7 +221,6 @@ public class ChromaKeyController : MonoBehaviour
 
         if (nx >= 0f && nx <= 1f && ny >= 0f && ny <= 1f)
         {
-            // uvRect 반영 (크롭/트랜스폼 적용)
             float trueU = nx;
             float trueV = ny;
             if (_rawImage != null)
@@ -252,7 +244,13 @@ public class ChromaKeyController : MonoBehaviour
                     _chromaMaterial.SetColor(ID_TargetColor, pickedColor);
 
                 PhotoBoothConfigLoader.Instance.SaveConfig();
-                Debug.Log("[ChromaKey] 🎨 색상 추출: " + hexColor + " → config 저장 완료");
+                Debug.Log("[ChromaKey] 🎨 색상 추출 성공: " + hexColor);
+                
+                // 1회성 추출 종료 처리
+                if (AppStateManager.Instance != null)
+                {
+                    AppStateManager.Instance.ToggleColorPickMode(); // 다시 꺼줌
+                }
             }
         }
     }

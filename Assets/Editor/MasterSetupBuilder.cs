@@ -154,11 +154,10 @@ public class MasterSetupBuilder
         // backgroundImageDisplay 슬롯 자동 연결
         if (overlayMgr.backgroundImageDisplay == null)
         {
-            // "Background", "BG", "Overlay" 이름이 있는 RawImage 검색
             RawImage[] allRaw = Object.FindObjectsOfType<RawImage>(true);
             foreach (var ri in allRaw)
             {
-                if (ri.GetComponent<ChromaKeyController>() != null) continue; // 웹캠용은 스킵
+                if (ri.GetComponent<ChromaKeyController>() != null) continue;
                 string n = ri.name.ToLower();
                 if (n.Contains("background") || n.Contains("overlay") || n.Contains("bg"))
                 {
@@ -167,6 +166,63 @@ public class MasterSetupBuilder
                     count++;
                     break;
                 }
+            }
+        }
+
+        // foregroundImageDisplay 자동 생성 및 연결
+        if (overlayMgr.foregroundImageDisplay == null && appState.panelCapture != null)
+        {
+            RawImage[] allRaw = appState.panelCapture.GetComponentsInChildren<RawImage>(true);
+            foreach (var ri in allRaw)
+            {
+                string n = ri.name.ToLower();
+                if (n.Contains("foreground") || n.Contains("front"))
+                {
+                    overlayMgr.foregroundImageDisplay = ri;
+                    Debug.Log($"✅ [Overlay] foregroundImageDisplay → '{ri.gameObject.name}' 기결정");
+                    break;
+                }
+            }
+
+            if (overlayMgr.foregroundImageDisplay == null)
+            {
+                GameObject fgObj = new GameObject("ForegroundFrame");
+                fgObj.transform.SetParent(appState.panelCapture.transform, false);
+                fgObj.transform.SetAsLastSibling(); // 제일 앞
+                RectTransform rt = fgObj.AddComponent<RectTransform>();
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.sizeDelta = Vector2.zero;
+                rt.anchoredPosition = Vector2.zero;
+                RawImage fgImg = fgObj.AddComponent<RawImage>();
+                fgImg.raycastTarget = false; // 클릭 통과
+                
+                overlayMgr.foregroundImageDisplay = fgImg;
+                Debug.Log("✅ [Overlay] ForegroundFrame 생성 및 연결 완료");
+                count++;
+            }
+        }
+
+        // bgThumbnailButtons 자동 연결
+        if ((overlayMgr.bgThumbnailButtons == null || overlayMgr.bgThumbnailButtons.Length == 0) && appState.panelSelectBG != null)
+        {
+            Button[] allButtons = appState.panelSelectBG.GetComponentsInChildren<Button>(true);
+            System.Collections.Generic.List<Button> thumbBtns = new System.Collections.Generic.List<Button>();
+            foreach (var btn in allButtons)
+            {
+                string lowerName = btn.name.ToLower();
+                if (lowerName.Contains("back") || lowerName.Contains("home") ||
+                    lowerName.Contains("close") || lowerName.Contains("prev") ||
+                    lowerName.Contains("next") || lowerName.Contains("admin"))
+                    continue;
+                thumbBtns.Add(btn);
+            }
+
+            if (thumbBtns.Count > 0)
+            {
+                overlayMgr.bgThumbnailButtons = thumbBtns.ToArray();
+                Debug.Log($"✅ [Overlay] 썸네일 버튼 {thumbBtns.Count}개 자동 연결 완료");
+                count++;
             }
         }
 
@@ -272,7 +328,7 @@ public class MasterSetupBuilder
         // ══════════════════════════════════════════════════════════════
 
         float startY = -85f;
-        float gap = 42f;
+        float gap = 50f;
         float leftX = 300f;
         int idx = 0;
 
@@ -321,21 +377,27 @@ public class MasterSetupBuilder
         count++;
 
         // ══════════════════════════════════════════════════════════════
-        //  우상단: 색상 추출 안내
+        //  상단 메뉴: 스포이드 버튼 / 탐색기 열기 버튼
         // ══════════════════════════════════════════════════════════════
 
-        CreateTMP(adminPanel, "ColorPickHint",
-            "좌클릭 = 색상 추출",
-            16, FontStyle.Bold, new Color(0.4f, 1f, 0.4f), TextAlignmentOptions.TopRight,
-            new Vector2(1, 1), new Vector2(1, 1), new Vector2(-20, -20), new Vector2(250, 30), koreanFont);
+        CreateButton(adminPanel, "ColorPickBtn", "스포이드 (색상 추출)",
+            new Color(0.2f, 0.6f, 0.3f), Color.white,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), new Vector2(250, 35),
+            appState, "ToggleColorPickMode");
+        count++;
+
+        CreateButton(adminPanel, "OpenFolderBtn", "📁 폴더 열기",
+            new Color(0.3f, 0.4f, 0.7f), Color.white,
+            new Vector2(1, 1), new Vector2(-150, -40), new Vector2(120, 40),
+            appState, "OpenStreamingAssetsFolder");
+        count++;
 
         // ══════════════════════════════════════════════════════════════
         //  로컬 크로마 토글 (슬라이더들 아래)
         // ══════════════════════════════════════════════════════════════
-
         appState.useLocalChromaToggle = CreateToggle(adminPanel, "UseLocalChromaToggle",
             "Local Override",
-            new Vector2(0, 1), new Vector2(leftX + 10, startY - gap * idx), new Vector2(250, 30));
+            new Vector2(0, 1), new Vector2(leftX + 10, startY - gap * idx++), new Vector2(250, 30));
         count++;
 
         // ══════════════════════════════════════════════════════════════
@@ -455,11 +517,16 @@ public class MasterSetupBuilder
 
         if (Object.FindObjectOfType<OverlayBGManager>() == null) { Debug.LogWarning("⚠️ 씬에 OverlayBGManager가 없습니다"); warnCount++; }
 
-        // ChromaKeyController는 이름으로 직접 찾기 (DestroyImmediate 후 FindObjectOfType 버그 회피)
-        GameObject wcObj = GameObject.Find("WebCamDisplay");
-        if (wcObj == null || wcObj.GetComponent<ChromaKeyController>() == null)
+        // 활성화된 ChromaKeyController 확인
+        ChromaKeyController ckc = null;
+        foreach (var c in Object.FindObjectsOfType<ChromaKeyController>())
         {
-            Debug.LogWarning("⚠️ 씬에 ChromaKeyController가 없습니다 (WebCamDisplay 오브젝트 확인)");
+            if (c.gameObject.activeInHierarchy) { ckc = c; break; }
+        }
+
+        if (ckc == null)
+        {
+            Debug.LogWarning("⚠️ 활성화된 ChromaKeyController 컴포넌트를 찾을 수 없습니다.");
             warnCount++;
         }
 
@@ -557,7 +624,7 @@ public class MasterSetupBuilder
         crt.anchorMin = anchor;
         crt.anchorMax = anchor;
         crt.anchoredPosition = pos;
-        crt.sizeDelta = new Vector2(380, 35);
+        crt.sizeDelta = new Vector2(456, 42); // 기존 대비 각 20% 증가
 
         // 라벨
         GameObject labelObj = new GameObject("Label");

@@ -1,9 +1,16 @@
-{
+﻿{
   "global": {
-    "targetColor": "#00B140",
+    "targetColor": "#EFF6F5",
     "masterSensitivity": 0.35,
     "masterSmoothness": 0.08,
-    "masterSpillRemoval": 0.15
+    "masterSpillRemoval": 0.171718121
+  },
+  "camera": {
+    "useDefaultDevice": true,
+    "deviceName": "",
+    "requestedWidth": 3840,
+    "requestedHeight": 2160,
+    "requestedFPS": 30
   },
   "backgrounds": [
     {
@@ -20,16 +27,16 @@
         "moveY": 0.0
       },
       "color": {
-        "brightness": 0.0,
-        "contrast": 1.0,
+        "brightness": 0.02895677,
+        "contrast": 1.02895761,
         "saturation": 1.0,
-        "hue": 0.0
+        "hue": -8.583069E-05
       },
       "chroma": {
         "useLocalChroma": false,
         "localSensitivity": 0.35,
         "localSmoothness": 0.08,
-        "localSpillRemoval": 0.15
+        "localSpillRemoval": 0.3402508
       }
     },
     {

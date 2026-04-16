@@ -3,9 +3,9 @@
 //  포천아트밸리 천문과학관 무인 포토부스 — 배경 합성 오케스트레이터
 //
 //  배경 이미지 로드 방식:
-//  ▪ StreamingAssets/ 폴더에서 bgName + 확장자로 직접 파일 로드
-//  ▪ config.json 의 bgName 값과 파일명이 일치해야 함 (확장자 제외)
-//  ▪ 새 배경 추가 = StreamingAssets에 이미지 복사 + config.json 수정만으로 완료 (재빌드 불필요)
+//  ▪ StreamingAssets/ 폴더에서 bgName + 확장자로 직접 파일 로드 (배경)
+//  ▪ bgName + "_front" 로드 (전경 프레임)
+//  ▪ bgName + "_thumbnail" 로드 (썸네일 버튼용)
 // =============================================================================
 using UnityEngine;
 using UnityEngine.UI;
@@ -17,21 +17,26 @@ public class OverlayBGManager : MonoBehaviour
     public static OverlayBGManager Instance { get; private set; }
 
     // ── Inspector 연결 ────────────────────────────────────────────────────────
-    [Header("배경 이미지 표시 레이어 (가장 뒤)")]
+    [Header("합성 표시 레이어")]
+    [Tooltip("배경 이미지 표시 레이어 (가장 뒤)")]
     public RawImage backgroundImageDisplay;
+    [Tooltip("전경 이미지 표시 레이어 (웹캠 위)")]
+    public RawImage foregroundImageDisplay;
 
     [Header("크로마키 컨트롤러 (WebCamDisplay 의 ChromaKeyController)")]
     public ChromaKeyController chromaKeyController;
 
-    [Header("배경 선택 UI 패널 (썸네일용, 선택사항)")]
-    public GameObject[] bgThumbnailButtons;
+    [Header("배경 선택 UI 패널 (썸네일용)")]
+    public Button[] bgThumbnailButtons;
 
     // ── 지원 확장자 (순서대로 검색) ───────────────────────────────────────────
-    private static readonly string[] SupportedExtensions = { ".jpg", ".jpeg", ".png" };
+    private static readonly string[] SupportedExtensions = { ".png", ".jpg", ".jpeg" };
 
     // ── 내부 상태 ─────────────────────────────────────────────────────────────
     private int _currentIndex = -1;
-    private Texture2D _loadedTexture; // 메모리 누수 방지용
+    private Texture2D _loadedTexture;      // 배경 텍스처
+    private Texture2D _loadedFrontTexture; // 전경 텍스처
+    private Texture2D[] _thumbTextures;    // 썸네일 텍스처 배열
 
     // ── 라이프사이클 ──────────────────────────────────────────────────────────
 
@@ -45,86 +50,67 @@ public class OverlayBGManager : MonoBehaviour
     {
         ValidateConfigAlignment();
         HideOverlay();
+        
+        // Config가 로드될 때 썸네일 세팅하도록 구독
+        if (PhotoBoothConfigLoader.Instance != null)
+        {
+            PhotoBoothConfigLoader.Instance.OnConfigReloaded += (config) => SetupThumbnails();
+            if (PhotoBoothConfigLoader.Instance.IsLoaded) SetupThumbnails();
+        }
     }
 
     private void OnDestroy()
     {
-        // 로드한 텍스처 메모리 해제
-        if (_loadedTexture != null)
+        if (PhotoBoothConfigLoader.Instance != null)
+            PhotoBoothConfigLoader.Instance.OnConfigReloaded -= (config) => SetupThumbnails();
+
+        if (_loadedTexture != null) { Destroy(_loadedTexture); _loadedTexture = null; }
+        if (_loadedFrontTexture != null) { Destroy(_loadedFrontTexture); _loadedFrontTexture = null; }
+
+        if (_thumbTextures != null)
         {
-            Destroy(_loadedTexture);
-            _loadedTexture = null;
+            foreach (var t in _thumbTextures)
+                if (t != null) Destroy(t);
+            _thumbTextures = null;
         }
     }
 
     // ── 공개 API (AppStateManager 에서 호출) ─────────────────────────────────
 
-    /// <summary>
-    /// 인덱스에 해당하는 배경을 로드하고 크로마키를 적용한다.
-    /// AppStateManager.SelectBackgroundAndGoNext(index) 에서 호출.
-    /// </summary>
     public void SetConfig(int index)
     {
         var loader = PhotoBoothConfigLoader.Instance;
-        if (loader == null || !loader.IsLoaded)
-        {
-            Debug.LogError("[OverlayBGManager] PhotoBoothConfigLoader 가 준비되지 않았습니다!");
-            return;
-        }
+        if (loader == null || !loader.IsLoaded) return;
 
         BackgroundConfig bgConfig = loader.Config.GetByIndex(index);
-        if (bgConfig == null)
-        {
-            Debug.LogError("[OverlayBGManager] 인덱스 " + index + " 에 해당하는 배경이 없습니다." +
-                           " config.json 의 backgrounds 항목을 확인하세요.");
-            return;
-        }
+        if (bgConfig == null) return;
 
         _currentIndex = index;
 
-        // ① 배경 이미지 로드 (StreamingAssets/bgName.jpg)
+        // 배경 & 전경 로드
         LoadAndApplyBackground(bgConfig.BgName);
 
-        // ② 크로마키 컨트롤러에 설정 전달 (Crop + Transform + Chroma + Color)
+        // 크로마키 세팅
         if (chromaKeyController != null)
         {
             chromaKeyController.Show();
             chromaKeyController.ApplyConfig(bgConfig);
         }
-        else
-        {
-            Debug.LogWarning("[OverlayBGManager] chromaKeyController 가 연결되지 않았습니다.");
-        }
-
-        Debug.Log("[OverlayBGManager] 배경 적용: [" + index + "] \"" + bgConfig.BgName + "\"");
     }
 
-    /// <summary>
-    /// 배경 오버레이를 숨긴다 (스탠바이 복귀 시 AppStateManager 에서 호출).
-    /// </summary>
     public void HideOverlay()
     {
-        if (backgroundImageDisplay != null)
-            backgroundImageDisplay.gameObject.SetActive(false);
-
-        if (chromaKeyController != null)
-            chromaKeyController.Hide();
-
+        if (backgroundImageDisplay != null) backgroundImageDisplay.gameObject.SetActive(false);
+        if (foregroundImageDisplay != null) foregroundImageDisplay.gameObject.SetActive(false);
+        if (chromaKeyController != null) chromaKeyController.Hide();
         _currentIndex = -1;
     }
 
-    /// <summary>
-    /// 배경 이미지만 숨기고 웹캠(크로마키)은 유지한다.
-    /// (1단계 마스터 캘리브레이션 시 순수 카메라 피드 확인용)
-    /// </summary>
     public void HideBackgroundOnly()
     {
-        if (backgroundImageDisplay != null)
-            backgroundImageDisplay.gameObject.SetActive(false);
-            
-        if (chromaKeyController != null)
-            chromaKeyController.Show(); // 강제로 웹캠은 켜줌
-
+        if (backgroundImageDisplay != null) backgroundImageDisplay.gameObject.SetActive(false);
+        if (foregroundImageDisplay != null) foregroundImageDisplay.gameObject.SetActive(false);
+        if (chromaKeyController != null) chromaKeyController.Show();
         _currentIndex = -1;
     }
 
@@ -138,65 +124,107 @@ public class OverlayBGManager : MonoBehaviour
 
     // ── 내부 구현 ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// StreamingAssets/{bgName}.jpg 에서 텍스처를 로드해 RawImage 에 적용.
-    /// bgName에 확장자가 포함되어 있으면 그대로 사용하고,
-    /// 없으면 .jpg → .jpeg → .png 순서로 탐색한다.
-    /// </summary>
+    private void SetupThumbnails()
+    {
+        var loader = PhotoBoothConfigLoader.Instance;
+        if (loader == null || !loader.IsLoaded) return;
+
+        int count = loader.Config.Backgrounds?.Count ?? 0;
+        if (bgThumbnailButtons == null || count == 0) return;
+
+        if (_thumbTextures != null)
+        {
+            foreach (var t in _thumbTextures) if (t != null) Destroy(t);
+        }
+        _thumbTextures = new Texture2D[btnCount];
+
+        int btnCount = bgThumbnailButtons.Length;
+        for (int i = 0; i < btnCount; i++)
+        {
+            if (i >= count) break;
+            
+            string bgName = loader.Config.Backgrounds[i].BgName;
+            
+            // 1순위: _thumbnail 파일, 2순위: 원본 파일
+            string thumbPath = FindBackgroundFile(bgName + "_thumbnail");
+            if (string.IsNullOrEmpty(thumbPath)) thumbPath = FindBackgroundFile(bgName);
+
+            if (!string.IsNullOrEmpty(thumbPath) && File.Exists(thumbPath))
+            {
+                byte[] fileData = File.ReadAllBytes(thumbPath);
+                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                tex.LoadImage(fileData);
+                _thumbTextures[i] = tex;
+
+                // 버튼 이미지 설정
+                Image btnImg = bgThumbnailButtons[i].GetComponent<Image>();
+                if (btnImg != null)
+                {
+                    btnImg.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                }
+            }
+        }
+        Debug.Log($"[OverlayBGManager] 썸네일 {count}개 로드 완료.");
+    }
+
     private void LoadAndApplyBackground(string bgName)
     {
-        if (backgroundImageDisplay == null) return;
-
-        string filePath = FindBackgroundFile(bgName);
-
-        if (string.IsNullOrEmpty(filePath))
+        // 1. 뒤쪽 배경 로드
+        if (backgroundImageDisplay != null)
         {
-            Debug.LogWarning("[OverlayBGManager] StreamingAssets/" + bgName +
-                             " 이미지를 찾을 수 없습니다. 파일명과 bgName 이 일치하는지 확인하세요.");
-            backgroundImageDisplay.gameObject.SetActive(false);
-            return;
+            string bgPath = FindBackgroundFile(bgName);
+            if (!string.IsNullOrEmpty(bgPath) && File.Exists(bgPath))
+            {
+                byte[] bgData = File.ReadAllBytes(bgPath);
+                if (_loadedTexture != null) Destroy(_loadedTexture);
+                _loadedTexture = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                _loadedTexture.LoadImage(bgData);
+
+                backgroundImageDisplay.texture = _loadedTexture;
+                backgroundImageDisplay.gameObject.SetActive(true);
+            }
+            else
+            {
+                backgroundImageDisplay.gameObject.SetActive(false);
+            }
         }
 
-        try
+        // 2. 앞쪽 전경(프레임) 로드
+        if (foregroundImageDisplay != null)
         {
-            byte[] fileData = File.ReadAllBytes(filePath);
+            string fgPath = FindBackgroundFile(bgName + "_front");
+            if (!string.IsNullOrEmpty(fgPath) && File.Exists(fgPath))
+            {
+                byte[] fgData = File.ReadAllBytes(fgPath);
+                if (_loadedFrontTexture != null) Destroy(_loadedFrontTexture);
+                // 투명도가 지원되어야 하므로 RGBA32
+                _loadedFrontTexture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                _loadedFrontTexture.LoadImage(fgData);
 
-            // 이전에 로드한 텍스처 메모리 해제
-            if (_loadedTexture != null) Destroy(_loadedTexture);
-
-            _loadedTexture = new Texture2D(2, 2, TextureFormat.RGB24, false);
-            _loadedTexture.LoadImage(fileData);
-
-            backgroundImageDisplay.texture = _loadedTexture;
-            backgroundImageDisplay.gameObject.SetActive(true);
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogError("[OverlayBGManager] 이미지 로드 실패: " + ex.Message);
-            backgroundImageDisplay.gameObject.SetActive(false);
+                foregroundImageDisplay.texture = _loadedFrontTexture;
+                foregroundImageDisplay.gameObject.SetActive(true);
+            }
+            else
+            {
+                foregroundImageDisplay.gameObject.SetActive(false);
+            }
         }
     }
 
-    /// <summary>
-    /// bgName으로 StreamingAssets 내 이미지 파일 경로를 찾는다.
-    /// 확장자가 이미 포함되어 있으면 그대로, 없으면 여러 확장자를 시도한다.
-    /// </summary>
-    private string FindBackgroundFile(string bgName)
+    private string FindBackgroundFile(string baseName)
     {
-        string baseName = Path.GetFileNameWithoutExtension(bgName);
-        string existingExt = Path.GetExtension(bgName);
+        string existingExt = Path.GetExtension(baseName);
 
-        // bgName에 확장자가 이미 포함된 경우 직접 시도
         if (!string.IsNullOrEmpty(existingExt))
         {
-            string directPath = Path.Combine(Application.streamingAssetsPath, bgName);
+            string directPath = Path.Combine(Application.streamingAssetsPath, baseName);
             if (File.Exists(directPath)) return directPath;
         }
 
-        // 확장자 없이 들어온 경우 지원 확장자 순서대로 탐색
+        string nameNoExt = Path.GetFileNameWithoutExtension(baseName);
         foreach (string ext in SupportedExtensions)
         {
-            string tryPath = Path.Combine(Application.streamingAssetsPath, baseName + ext);
+            string tryPath = Path.Combine(Application.streamingAssetsPath, nameNoExt + ext);
             if (File.Exists(tryPath)) return tryPath;
         }
 
@@ -213,8 +241,7 @@ public class OverlayBGManager : MonoBehaviour
 
         if (btnCount > 0 && btnCount != configCount)
         {
-            Debug.LogWarning("[OverlayBGManager] 썸네일 버튼 수(" + btnCount +
-                             ")와 config.json 배경 수(" + configCount + ")가 다릅니다!");
+            Debug.LogWarning($"[OverlayBGManager] 썸네일 버튼 수({btnCount})와 config 배경 수({configCount})가 다릅니다!");
         }
     }
 }

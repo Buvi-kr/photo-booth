@@ -191,12 +191,38 @@ public class AppStateManager : MonoBehaviour
         selectVideoPlayer.Play();
     }
 
+    public bool isColorPickingMode = false;
+
+    public void ToggleColorPickMode()
+    {
+        isColorPickingMode = !isColorPickingMode;
+        Debug.Log($"[Admin] 💧 색상 추출(스포이드) 모드: {(isColorPickingMode ? "ON" : "OFF")}");
+        
+        // 텍스트 시각적 피드백 (찾아서 컬러/텍스트 변경)
+        if (adminPanel != null)
+        {
+            var tmp = adminPanel.transform.Find("ColorPickBtn")?.GetComponentInChildren<TMPro.TextMeshProUGUI>();
+            if (tmp != null)
+            {
+                tmp.text = isColorPickingMode ? "추출 중... (클릭)" : "스포이드 (색상 추출)";
+                tmp.color = isColorPickingMode ? new Color(1f, 0.4f, 0.4f) : Color.white;
+            }
+        }
+    }
+
+    public void OpenStreamingAssetsFolder()
+    {
+        Application.OpenURL("file://" + Application.streamingAssetsPath);
+        Debug.Log("[Admin] 📁 폴더 열기: " + Application.streamingAssetsPath);
+    }
+
     private void ToggleAdminMode()
     {
         if (currentState != AppState.Calibration) 
         {
             ChangeState(AppState.Calibration);
             adminStep = AdminStep.GlobalChroma;
+            isColorPickingMode = false; // 진입 시 해제 상태로 시작
             if (PhotoBoothConfigLoader.Instance != null && PhotoBoothConfigLoader.Instance.IsLoaded)
             {
                 RefreshAdminUI();
