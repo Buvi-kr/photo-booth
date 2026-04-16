@@ -46,3 +46,8 @@ sysinfo.txt
 # Desktop
 .DS_Store
 Thumbs.db
+
+# Project specific ignores
+/Assets/MyPhotoBooth/
+/ignore.conf
+/UpgradeLog.htm
