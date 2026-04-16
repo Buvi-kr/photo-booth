@@ -216,24 +216,26 @@ public class ChromaKeyController : MonoBehaviour
 
     private void ExtractColorFromMouse()
     {
-        if (_rawImage == null || _rectTransform == null)
+        if (_webcamTexture == null || !_webcamTexture.isPlaying)
         {
-            Debug.LogWarning("[ChromaKey] ❌ _rawImage 또는 _rectTransform이 null입니다");
+            Debug.LogWarning("[ChromaKey] ❌ 웹캠이 재생 중이 아닙니다");
             return;
         }
-        
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            _rectTransform, Input.mousePosition, null, out Vector2 localPoint);
 
-        Rect rect = _rectTransform.rect;
-        float nx = (localPoint.x - rect.x) / rect.width;
-        float ny = (localPoint.y - rect.y) / rect.height;
+        // Screen 좌표 기반 정규화 (Canvas Scaler 영향 받지 않음)
+        float nx = Input.mousePosition.x / Screen.width;
+        float ny = Input.mousePosition.y / Screen.height;
 
         if (nx >= 0f && nx <= 1f && ny >= 0f && ny <= 1f)
         {
-            // UV 맵핑 역산 (크롭 및 트랜스폼 반영된 실제 웹캠 텍스처 좌표)
-            float trueU = _rawImage.uvRect.x + nx * _rawImage.uvRect.width;
-            float trueV = _rawImage.uvRect.y + ny * _rawImage.uvRect.height;
+            // uvRect 반영 (크롭/트랜스폼 적용)
+            float trueU = nx;
+            float trueV = ny;
+            if (_rawImage != null)
+            {
+                trueU = _rawImage.uvRect.x + nx * _rawImage.uvRect.width;
+                trueV = _rawImage.uvRect.y + ny * _rawImage.uvRect.height;
+            }
 
             int px = Mathf.Clamp(Mathf.FloorToInt(trueU * _webcamTexture.width), 0, _webcamTexture.width - 1);
             int py = Mathf.Clamp(Mathf.FloorToInt(trueV * _webcamTexture.height), 0, _webcamTexture.height - 1);
@@ -246,17 +248,12 @@ public class ChromaKeyController : MonoBehaviour
                 var globalCfg = PhotoBoothConfigLoader.Instance.Config.Global;
                 globalCfg.TargetColor = hexColor;
 
-                // 셰이더에 즉시 반영 (시각적 피드백)
                 if (_chromaMaterial != null)
                     _chromaMaterial.SetColor(ID_TargetColor, pickedColor);
 
                 PhotoBoothConfigLoader.Instance.SaveConfig();
                 Debug.Log("[ChromaKey] 🎨 색상 추출: " + hexColor + " → config 저장 완료");
             }
-        }
-        else
-        {
-            Debug.Log($"[ChromaKey] 클릭 위치가 웹캠 영역 밖입니다 (nx={nx:F2}, ny={ny:F2})");
         }
     }
 

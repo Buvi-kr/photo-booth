@@ -257,13 +257,13 @@ public class MasterSetupBuilder
         appState.adminStepTitleText = CreateTMP(adminPanel, "AdminStepTitleText",
             "[1] Global Chroma",
             26, FontStyle.Bold, Color.white, TextAlignmentOptions.TopLeft,
-            new Vector2(0, 1), new Vector2(0, 1), new Vector2(20, -15), new Vector2(500, 35), koreanFont);
+            new Vector2(0, 1), new Vector2(0, 1), new Vector2(300, -15), new Vector2(500, 35), koreanFont);
         count++;
 
         appState.adminTargetNameText = CreateTMP(adminPanel, "AdminTargetNameText",
             "Global Master",
             18, FontStyle.Normal, new Color(0.7f, 0.9f, 1f), TextAlignmentOptions.TopLeft,
-            new Vector2(0, 1), new Vector2(0, 1), new Vector2(20, -48), new Vector2(500, 28), koreanFont);
+            new Vector2(0, 1), new Vector2(0, 1), new Vector2(300, -48), new Vector2(500, 28), koreanFont);
         count++;
 
         // ══════════════════════════════════════════════════════════════
@@ -273,7 +273,7 @@ public class MasterSetupBuilder
 
         float startY = -85f;
         float gap = 42f;
-        float leftX = 20f;
+        float leftX = 300f;
         int idx = 0;
 
         // --- 크로마키 슬라이더 (항상 표시) ---
