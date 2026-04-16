@@ -178,6 +178,8 @@ public class OverlayBGManager : MonoBehaviour
                 Image btnImg = bgThumbnailButtons[i].GetComponent<Image>();
                 if (btnImg != null)
                 {
+                    btnImg.type = Image.Type.Simple; // 슬라이스 방지
+                    btnImg.preserveAspect = true;    // 비율 유지 (짤림 방지)
                     btnImg.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
                     Debug.Log($"[Overlay] 버튼 {i}번 이미지 로드 성공: {Path.GetFileName(thumbPath)}");
                 }
