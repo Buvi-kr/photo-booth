@@ -29,6 +29,10 @@ public class AppStateManager : MonoBehaviour
     public Slider sensitivitySlider;
     public Slider smoothnessSlider;
     public Slider spillRemovalSlider;
+    public Slider brightnessSlider;
+    public Slider contrastSlider;
+    public Slider saturationSlider;
+    public Slider hueSlider;
     public Toggle useLocalChromaToggle;
     public TextMeshProUGUI adminStepTitleText;
     public TextMeshProUGUI adminTargetNameText;
@@ -81,6 +85,10 @@ public class AppStateManager : MonoBehaviour
         if (sensitivitySlider != null) sensitivitySlider.onValueChanged.AddListener(OnSensitivityChanged);
         if (smoothnessSlider != null) smoothnessSlider.onValueChanged.AddListener(OnSmoothnessChanged);
         if (spillRemovalSlider != null) spillRemovalSlider.onValueChanged.AddListener(OnSpillRemovalChanged);
+        if (brightnessSlider != null) brightnessSlider.onValueChanged.AddListener(OnBrightnessChanged);
+        if (contrastSlider != null) contrastSlider.onValueChanged.AddListener(OnContrastChanged);
+        if (saturationSlider != null) saturationSlider.onValueChanged.AddListener(OnSaturationChanged);
+        if (hueSlider != null) hueSlider.onValueChanged.AddListener(OnHueChanged);
         if (useLocalChromaToggle != null) useLocalChromaToggle.onValueChanged.AddListener(OnUseLocalChromaToggled);
     }
 
@@ -355,14 +363,17 @@ public class AppStateManager : MonoBehaviour
 
         if (adminStep == AdminStep.GlobalChroma)
         {
-            if (adminStepTitleText != null) adminStepTitleText.text = "1단계: 마스터 설정";
-            if (adminTargetNameText != null) adminTargetNameText.text = "대상: 공통 프리뷰";
+            if (adminStepTitleText != null) adminStepTitleText.text = "[1] Global Chroma";
+            if (adminTargetNameText != null) adminTargetNameText.text = "Global Master";
             if (useLocalChromaToggle != null) useLocalChromaToggle.gameObject.SetActive(false);
 
             if (sensitivitySlider != null) sensitivitySlider.value = config.Global.MasterSensitivity;
             if (smoothnessSlider != null) smoothnessSlider.value = config.Global.MasterSmoothness;
             if (spillRemovalSlider != null) spillRemovalSlider.value = config.Global.MasterSpillRemoval;
-            
+
+            // Global 페이지에서는 색상보정 비활성
+            SetColorSlidersVisible(false);
+
             ApplyAdminBackgroundOverlay(-1);
         }
         else
@@ -370,8 +381,8 @@ public class AppStateManager : MonoBehaviour
             if (config.Backgrounds.Count <= adminBgIndex) return;
 
             var bg = config.Backgrounds[adminBgIndex];
-            if (adminStepTitleText != null) adminStepTitleText.text = $"2단계: 배경별 설정 ({adminBgIndex + 1}/{config.Backgrounds.Count})";
-            if (adminTargetNameText != null) adminTargetNameText.text = "대상: " + bg.BgName;
+            if (adminStepTitleText != null) adminStepTitleText.text = $"[2] BG {adminBgIndex + 1}/{config.Backgrounds.Count}";
+            if (adminTargetNameText != null) adminTargetNameText.text = bg.BgName;
 
             if (useLocalChromaToggle != null)
             {
@@ -382,6 +393,13 @@ public class AppStateManager : MonoBehaviour
             if (sensitivitySlider != null) sensitivitySlider.value = bg.Chroma.LocalSensitivity;
             if (smoothnessSlider != null) smoothnessSlider.value = bg.Chroma.LocalSmoothness;
             if (spillRemovalSlider != null) spillRemovalSlider.value = bg.Chroma.LocalSpillRemoval;
+
+            // 배경별 색상보정
+            SetColorSlidersVisible(true);
+            if (brightnessSlider != null) brightnessSlider.value = bg.Color.Brightness;
+            if (contrastSlider != null) contrastSlider.value = bg.Color.Contrast;
+            if (saturationSlider != null) saturationSlider.value = bg.Color.Saturation;
+            if (hueSlider != null) hueSlider.value = bg.Color.Hue;
         }
 
         _isAdminUIUpdating = false;
@@ -415,6 +433,34 @@ public class AppStateManager : MonoBehaviour
         ApplyAdminToPreview();
     }
 
+    private void OnBrightnessChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Color.Brightness = v;
+        ApplyAdminToPreview();
+    }
+
+    private void OnContrastChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Color.Contrast = v;
+        ApplyAdminToPreview();
+    }
+
+    private void OnSaturationChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Color.Saturation = v;
+        ApplyAdminToPreview();
+    }
+
+    private void OnHueChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Color.Hue = v;
+        ApplyAdminToPreview();
+    }
+
     private void OnUseLocalChromaToggled(bool b)
     {
         if (_isAdminUIUpdating) return;
@@ -423,6 +469,14 @@ public class AppStateManager : MonoBehaviour
             PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Chroma.UseLocalChroma = b;
             ApplyAdminToPreview();
         }
+    }
+
+    private void SetColorSlidersVisible(bool visible)
+    {
+        if (brightnessSlider != null) brightnessSlider.transform.parent.gameObject.SetActive(visible);
+        if (contrastSlider != null) contrastSlider.transform.parent.gameObject.SetActive(visible);
+        if (saturationSlider != null) saturationSlider.transform.parent.gameObject.SetActive(visible);
+        if (hueSlider != null) hueSlider.transform.parent.gameObject.SetActive(visible);
     }
 
     private void ApplyAdminToPreview()

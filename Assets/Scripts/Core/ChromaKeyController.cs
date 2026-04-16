@@ -199,19 +199,28 @@ public class ChromaKeyController : MonoBehaviour
 
     private void Update()
     {
-        // 관리자 모드(adminPanel 활성화) 상태에서만 왼쪽 클릭(0)으로 타겟 색상 추출
-        if (Input.GetMouseButtonDown(0) && _webcamTexture != null && _webcamTexture.isPlaying)
+        if (!Input.GetMouseButtonDown(0)) return;
+
+        // 디버그: 색상 추출 조건 체크
+        bool webcamOk = _webcamTexture != null && _webcamTexture.isPlaying;
+        bool adminOk = AppStateManager.Instance != null
+                    && AppStateManager.Instance.adminPanel != null
+                    && AppStateManager.Instance.adminPanel.activeSelf;
+
+        if (webcamOk && adminOk)
         {
-            if (AppStateManager.Instance != null && AppStateManager.Instance.adminPanel != null && AppStateManager.Instance.adminPanel.activeSelf)
-            {
-                ExtractColorFromMouse();
-            }
+            Debug.Log("[ChromaKey] 🖱️ 좌클릭 감지 → 색상 추출 시작");
+            ExtractColorFromMouse();
         }
     }
 
     private void ExtractColorFromMouse()
     {
-        if (_rawImage == null || _rectTransform == null) return;
+        if (_rawImage == null || _rectTransform == null)
+        {
+            Debug.LogWarning("[ChromaKey] ❌ _rawImage 또는 _rectTransform이 null입니다");
+            return;
+        }
         
         RectTransformUtility.ScreenPointToLocalPointInRectangle(
             _rectTransform, Input.mousePosition, null, out Vector2 localPoint);
@@ -242,8 +251,12 @@ public class ChromaKeyController : MonoBehaviour
                     _chromaMaterial.SetColor(ID_TargetColor, pickedColor);
 
                 PhotoBoothConfigLoader.Instance.SaveConfig();
-                Debug.Log("[ChromaKey] 🎨 색상 추출: " + hexColor + " → 셰이더 즉시 반영 + config 저장 완료");
+                Debug.Log("[ChromaKey] 🎨 색상 추출: " + hexColor + " → config 저장 완료");
             }
+        }
+        else
+        {
+            Debug.Log($"[ChromaKey] 클릭 위치가 웹캠 영역 밖입니다 (nx={nx:F2}, ny={ny:F2})");
         }
     }
 

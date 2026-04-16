@@ -220,20 +220,17 @@ public class MasterSetupBuilder
         GameObject adminPanel = appState.adminPanel;
         if (adminPanel == null)
         {
-            Debug.LogWarning("⚠️ [Admin] adminPanel이 할당되지 않았습니다. 관리자 UI 세팅을 건너뜁니다.");
+            Debug.LogWarning("⚠️ [Admin] adminPanel이 할당되지 않았습니다.");
             return 0;
         }
 
         Undo.RegisterFullObjectHierarchyUndo(adminPanel, "Rebuild Admin Panel");
 
-        // ★★★ 핵심: 기존 자식 오브젝트를 전부 삭제하고 깨끗하게 시작 ★★★
+        // ★ 기존 자식 전부 삭제
         for (int i = adminPanel.transform.childCount - 1; i >= 0; i--)
-        {
             Object.DestroyImmediate(adminPanel.transform.GetChild(i).gameObject);
-        }
-        Debug.Log("🗑️ [Admin] 기존 AdminPanel 자식 요소 전부 삭제 완료");
 
-        // ── adminPanel 자체 설정: 전체 화면, 반투명 배경, Raycast ON ──
+        // ── adminPanel 자체 설정 ──
         RectTransform panelRT = adminPanel.GetComponent<RectTransform>();
         panelRT.anchorMin = Vector2.zero;
         panelRT.anchorMax = Vector2.one;
@@ -242,92 +239,129 @@ public class MasterSetupBuilder
 
         Image panelBg = adminPanel.GetComponent<Image>();
         if (panelBg == null) panelBg = adminPanel.AddComponent<Image>();
-        panelBg.color = new Color(0, 0, 0, 0.7f);      // 반투명 검정
-        panelBg.raycastTarget = true;                     // ★ 뒤쪽 클릭 차단!
+        panelBg.color = new Color(0, 0, 0, 0.55f);
+        panelBg.raycastTarget = false;  // ★ false: 색상 추출 클릭이 관통하도록!
 
-        // 레이아웃 컴포넌트 전부 제거
         foreach (var lg in adminPanel.GetComponents<LayoutGroup>()) Object.DestroyImmediate(lg);
         foreach (var csf in adminPanel.GetComponents<ContentSizeFitter>()) Object.DestroyImmediate(csf);
 
+        // ── 한글 폰트 로드 ──
+        TMP_FontAsset koreanFont = FindKoreanFont();
+
         int count = 0;
 
-        // ══════════════════════════════════════════════════════════════════
-        //  상단 영역: 제목 + 대상 이름
-        // ══════════════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
+        //  좌상단: 제목 + 대상 표시
+        // ══════════════════════════════════════════════════════════════
 
         appState.adminStepTitleText = CreateTMP(adminPanel, "AdminStepTitleText",
-            "Step 1: Master Chroma",
-            32, FontStyle.Bold, Color.white, TextAlignmentOptions.Center,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -30), new Vector2(600, 50));
+            "[1] Global Chroma",
+            26, FontStyle.Bold, Color.white, TextAlignmentOptions.TopLeft,
+            new Vector2(0, 1), new Vector2(0, 1), new Vector2(20, -15), new Vector2(500, 35), koreanFont);
         count++;
 
         appState.adminTargetNameText = CreateTMP(adminPanel, "AdminTargetNameText",
-            "Target: Global",
-            22, FontStyle.Normal, new Color(0.8f, 0.9f, 1f), TextAlignmentOptions.Center,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -70), new Vector2(600, 40));
+            "Global Master",
+            18, FontStyle.Normal, new Color(0.7f, 0.9f, 1f), TextAlignmentOptions.TopLeft,
+            new Vector2(0, 1), new Vector2(0, 1), new Vector2(20, -48), new Vector2(500, 28), koreanFont);
         count++;
 
-        // ══════════════════════════════════════════════════════════════════
-        //  중앙 좌측: 슬라이더 3개 + 라벨
-        // ══════════════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
+        //  좌측 슬라이더 7개 (크로마키 3 + 색상보정 4)
+        //  1920x1080 기준 좌상단 배치
+        // ══════════════════════════════════════════════════════════════
 
-        float sliderX = -300f;   // 중앙에서 왼쪽으로 300
-        float sliderStartY = 60f;
-        float sliderGap = 60f;
+        float startY = -85f;
+        float gap = 42f;
+        float leftX = 20f;
+        int idx = 0;
 
-        appState.sensitivitySlider = CreateSlider(adminPanel, "SensitivitySlider", "Sensitivity",
-            new Vector2(0.5f, 0.5f), new Vector2(sliderX, sliderStartY));
+        // --- 크로마키 슬라이더 (항상 표시) ---
+        appState.sensitivitySlider = CreateSlider(adminPanel, "SensitivitySlider",
+            "감도", 0f, 1f, 0.35f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
-        appState.smoothnessSlider = CreateSlider(adminPanel, "SmoothnessSlider", "Smoothness",
-            new Vector2(0.5f, 0.5f), new Vector2(sliderX, sliderStartY - sliderGap));
+        appState.smoothnessSlider = CreateSlider(adminPanel, "SmoothnessSlider",
+            "부드러움", 0f, 1f, 0.08f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
-        appState.spillRemovalSlider = CreateSlider(adminPanel, "SpillSlider", "Spill Removal",
-            new Vector2(0.5f, 0.5f), new Vector2(sliderX, sliderStartY - sliderGap * 2));
+        appState.spillRemovalSlider = CreateSlider(adminPanel, "SpillSlider",
+            "스필 제거", 0f, 1f, 0.15f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
-        // ══════════════════════════════════════════════════════════════════
-        //  중앙 우측: 색상 추출 안내 텍스트
-        // ══════════════════════════════════════════════════════════════════
+        // --- 구분선 텍스트 ---
+        CreateTMP(adminPanel, "ColorGradingSeparator",
+            "── 색상 보정 (배경별) ──",
+            14, FontStyle.Normal, new Color(1f, 0.8f, 0.3f), TextAlignmentOptions.TopLeft,
+            new Vector2(0, 1), new Vector2(0, 1),
+            new Vector2(leftX, startY - gap * idx++), new Vector2(300, 25), koreanFont);
+
+        // --- 색상보정 슬라이더 (배경별 페이지에서만 활성) ---
+        appState.brightnessSlider = CreateSlider(adminPanel, "BrightnessSlider",
+            "밝기", -1f, 1f, 0f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
+        count++;
+
+        appState.contrastSlider = CreateSlider(adminPanel, "ContrastSlider",
+            "대비", 0f, 2f, 1f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
+        count++;
+
+        appState.saturationSlider = CreateSlider(adminPanel, "SaturationSlider",
+            "채도", 0f, 2f, 1f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
+        count++;
+
+        appState.hueSlider = CreateSlider(adminPanel, "HueSlider",
+            "색조", -180f, 180f, 0f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
+        count++;
+
+        // ══════════════════════════════════════════════════════════════
+        //  우상단: 색상 추출 안내
+        // ══════════════════════════════════════════════════════════════
 
         CreateTMP(adminPanel, "ColorPickHint",
-            "Click webcam\nto pick color",
-            20, FontStyle.Italic, new Color(0.5f, 1f, 0.5f), TextAlignmentOptions.Center,
-            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(300, 30), new Vector2(250, 80));
+            "좌클릭 = 색상 추출",
+            16, FontStyle.Bold, new Color(0.4f, 1f, 0.4f), TextAlignmentOptions.TopRight,
+            new Vector2(1, 1), new Vector2(1, 1), new Vector2(-20, -20), new Vector2(250, 30), koreanFont);
 
-        // ══════════════════════════════════════════════════════════════════
-        //  중앙: 로컬 크로마 토글
-        // ══════════════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
+        //  로컬 크로마 토글 (슬라이더들 아래)
+        // ══════════════════════════════════════════════════════════════
 
         appState.useLocalChromaToggle = CreateToggle(adminPanel, "UseLocalChromaToggle",
-            "Use Local Override",
-            new Vector2(0.5f, 0.5f), new Vector2(0, -130), new Vector2(300, 35));
+            "Local Override",
+            new Vector2(0, 1), new Vector2(leftX + 10, startY - gap * idx), new Vector2(250, 30));
         count++;
 
-        // ══════════════════════════════════════════════════════════════════
-        //  하단: Prev / Save / Next 버튼
-        // ══════════════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
+        //  하단: PREV / SAVE / NEXT 버튼
+        // ══════════════════════════════════════════════════════════════
 
         CreateButton(adminPanel, "PrevAdminBtn", "< PREV",
-            new Color(0.3f, 0.3f, 0.3f), Color.white,
-            new Vector2(0f, 0f), new Vector2(120, 50), new Vector2(180, 60),
+            new Color(0.25f, 0.25f, 0.35f), Color.white,
+            new Vector2(0f, 0f), new Vector2(110, 40), new Vector2(160, 50),
             appState, "PrevAdminStep");
         count++;
 
-        CreateButton(adminPanel, "SaveAdminBtn", "SAVE CONFIG",
-            new Color(0.1f, 0.5f, 0.1f), Color.white,
-            new Vector2(0.5f, 0f), new Vector2(0, 50), new Vector2(220, 60),
+        CreateButton(adminPanel, "SaveAdminBtn", "SAVE",
+            new Color(0.1f, 0.55f, 0.15f), Color.white,
+            new Vector2(0.5f, 0f), new Vector2(0, 40), new Vector2(180, 50),
             appState, "ApplyAndSaveAdminConfig");
         count++;
 
         CreateButton(adminPanel, "NextAdminBtn", "NEXT >",
-            new Color(0.3f, 0.3f, 0.3f), Color.white,
-            new Vector2(1f, 0f), new Vector2(-120, 50), new Vector2(180, 60),
+            new Color(0.25f, 0.25f, 0.35f), Color.white,
+            new Vector2(1f, 0f), new Vector2(-110, 40), new Vector2(160, 50),
             appState, "NextAdminStep");
         count++;
 
-        Debug.Log($"✅ [Admin] 관리자 패널 UI {count}개 항목 완전 재구축 완료!");
+        EditorUtility.SetDirty(appState);
+        Debug.Log($"✅ [Admin] 관리자 패널 UI {count}개 항목 재구축 완료!");
         return count;
     }
 
@@ -420,7 +454,15 @@ public class MasterSetupBuilder
         if (appState.photoCaptureManager == null) { Debug.LogWarning("⚠️ photoCaptureManager 미연결"); warnCount++; }
 
         if (Object.FindObjectOfType<OverlayBGManager>() == null) { Debug.LogWarning("⚠️ 씬에 OverlayBGManager가 없습니다"); warnCount++; }
-        if (Object.FindObjectOfType<ChromaKeyController>() == null) { Debug.LogWarning("⚠️ 씬에 ChromaKeyController가 없습니다"); warnCount++; }
+
+        // ChromaKeyController는 이름으로 직접 찾기 (DestroyImmediate 후 FindObjectOfType 버그 회피)
+        GameObject wcObj = GameObject.Find("WebCamDisplay");
+        if (wcObj == null || wcObj.GetComponent<ChromaKeyController>() == null)
+        {
+            Debug.LogWarning("⚠️ 씬에 ChromaKeyController가 없습니다 (WebCamDisplay 오브젝트 확인)");
+            warnCount++;
+        }
+
         if (Object.FindObjectOfType<PhotoBoothConfigLoader>() == null) { Debug.LogWarning("⚠️ 씬에 PhotoBoothConfigLoader가 없습니다"); warnCount++; }
 
         string saPath = Application.streamingAssetsPath;
@@ -463,10 +505,22 @@ public class MasterSetupBuilder
     //  헬퍼: Create 계열 (처음부터 생성, 중복 걱정 없음)
     // ═══════════════════════════════════════════════════════════════════════════
 
+    // ---- CreateTMP without font ----
     private static TextMeshProUGUI CreateTMP(GameObject parent, string objName,
         string text, int fontSize, FontStyle style, Color color,
         TextAlignmentOptions alignment,
         Vector2 anchorMin, Vector2 anchorMax, Vector2 pos, Vector2 size)
+    {
+        return CreateTMP(parent, objName, text, fontSize, style, color, alignment,
+            anchorMin, anchorMax, pos, size, null);
+    }
+
+    // ---- CreateTMP with font ----
+    private static TextMeshProUGUI CreateTMP(GameObject parent, string objName,
+        string text, int fontSize, FontStyle style, Color color,
+        TextAlignmentOptions alignment,
+        Vector2 anchorMin, Vector2 anchorMax, Vector2 pos, Vector2 size,
+        TMP_FontAsset font)
     {
         GameObject obj = new GameObject(objName);
         obj.transform.SetParent(parent.transform, false);
@@ -480,6 +534,7 @@ public class MasterSetupBuilder
         tmp.enableWordWrapping = true;
         tmp.overflowMode = TextOverflowModes.Overflow;
         tmp.raycastTarget = false;
+        if (font != null) tmp.font = font;
 
         RectTransform rt = obj.GetComponent<RectTransform>();
         rt.anchorMin = anchorMin;
@@ -490,10 +545,11 @@ public class MasterSetupBuilder
         return tmp;
     }
 
+    // ---- CreateSlider with min/max/default/font ----
     private static Slider CreateSlider(GameObject parent, string objName, string labelText,
-        Vector2 anchor, Vector2 pos)
+        float minValue, float maxValue, float defaultValue,
+        Vector2 anchor, Vector2 pos, TMP_FontAsset font)
     {
-        // 컨테이너
         GameObject container = new GameObject(objName);
         container.transform.SetParent(parent.transform, false);
 
@@ -501,40 +557,64 @@ public class MasterSetupBuilder
         crt.anchorMin = anchor;
         crt.anchorMax = anchor;
         crt.anchoredPosition = pos;
-        crt.sizeDelta = new Vector2(400, 40);
+        crt.sizeDelta = new Vector2(380, 35);
 
         // 라벨
         GameObject labelObj = new GameObject("Label");
         labelObj.transform.SetParent(container.transform, false);
         var labelTMP = labelObj.AddComponent<TextMeshProUGUI>();
         labelTMP.text = labelText;
-        labelTMP.fontSize = 16;
-        labelTMP.color = new Color(0.9f, 0.9f, 0.9f);
+        labelTMP.fontSize = 15;
+        labelTMP.color = new Color(0.92f, 0.92f, 0.92f);
         labelTMP.alignment = TextAlignmentOptions.Left;
         labelTMP.raycastTarget = false;
+        if (font != null) labelTMP.font = font;
         RectTransform lrt = labelObj.GetComponent<RectTransform>();
-        lrt.anchorMin = new Vector2(0, 0.5f);
-        lrt.anchorMax = new Vector2(0, 0.5f);
-        lrt.anchoredPosition = new Vector2(60, 0);
-        lrt.sizeDelta = new Vector2(120, 30);
+        lrt.anchorMin = new Vector2(0, 0);
+        lrt.anchorMax = new Vector2(0.22f, 1);
+        lrt.sizeDelta = Vector2.zero;
+        lrt.anchoredPosition = Vector2.zero;
 
-        // 슬라이더 (Unity 기본 슬라이더 사용)
+        // 슬라이더
         GameObject sliderObj = DefaultControls.CreateSlider(new DefaultControls.Resources());
         sliderObj.name = "Slider";
         sliderObj.transform.SetParent(container.transform, false);
         RectTransform srt = sliderObj.GetComponent<RectTransform>();
-        srt.anchorMin = new Vector2(0.3f, 0f);
-        srt.anchorMax = new Vector2(1f, 1f);
+        srt.anchorMin = new Vector2(0.24f, 0.15f);
+        srt.anchorMax = new Vector2(1f, 0.85f);
         srt.sizeDelta = Vector2.zero;
         srt.anchoredPosition = Vector2.zero;
 
         Slider slider = sliderObj.GetComponent<Slider>();
-        slider.minValue = 0f;
-        slider.maxValue = 1f;
-        slider.value = 0.5f;
+        slider.minValue = minValue;
+        slider.maxValue = maxValue;
+        slider.value = defaultValue;
 
-        Debug.Log($"✅ [Admin] '{objName}' 슬라이더 생성");
         return slider;
+    }
+
+    // ---- FindKoreanFont ----
+    private static TMP_FontAsset FindKoreanFont()
+    {
+        string[] guids = AssetDatabase.FindAssets("t:TMP_FontAsset");
+        foreach (string guid in guids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            string fn = Path.GetFileNameWithoutExtension(path).ToLower();
+            if (fn.Contains("noto") || fn.Contains("cjk") || fn.Contains("korean") ||
+                fn.Contains("pretendard") || fn.Contains("kopub") || fn.Contains("nanum") ||
+                fn.Contains("malgun") || fn.Contains("spoqa"))
+            {
+                var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
+                if (font != null)
+                {
+                    Debug.Log($"✅ [Font] 한글 폰트 발견: {path}");
+                    return font;
+                }
+            }
+        }
+        Debug.LogWarning("⚠️ [Font] 한글 폰트를 찾지 못했습니다. 기본 폰트를 사용합니다.");
+        return null;
     }
 
     private static Toggle CreateToggle(GameObject parent, string objName, string labelText,
