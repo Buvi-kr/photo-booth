@@ -61,16 +61,51 @@ public class MasterSetupBuilder
 
     private static int EnsureChromaKeyController(AppStateManager appState)
     {
-        ChromaKeyController existing = Object.FindObjectOfType<ChromaKeyController>();
-        if (existing != null)
+        int fixCount = 0;
+
+        // ★ 1단계: 씬 전체에서 ChromaKeyController 전수 탐색 + 중복 제거
+        ChromaKeyController[] allControllers = Object.FindObjectsOfType<ChromaKeyController>(true);
+
+        if (allControllers.Length > 1)
         {
-            Debug.Log($"✅ [ChromaKey] 기존 ChromaKeyController 발견: '{existing.gameObject.name}'");
+            Debug.LogWarning($"⚠️ [ChromaKey] ChromaKeyController가 {allControllers.Length}개 발견됨! 중복 제거 시작...");
+
+            // 셰이더가 연결된 것을 우선 유지, 나머지 삭제
+            ChromaKeyController keep = null;
+            foreach (var ckc in allControllers)
+            {
+                if (ckc.chromaKeyShader != null)
+                {
+                    keep = ckc;
+                    break;
+                }
+            }
+            if (keep == null) keep = allControllers[0]; // 전부 셰이더 없으면 첫 번째 유지
+
+            foreach (var ckc in allControllers)
+            {
+                if (ckc != keep)
+                {
+                    Debug.Log($"✅ [ChromaKey] 중복 제거: '{ckc.gameObject.name}' 에서 ChromaKeyController 삭제");
+                    Object.DestroyImmediate(ckc);
+                    fixCount++;
+                }
+            }
+
+            Debug.Log($"✅ [ChromaKey] 최종 유지: '{keep.gameObject.name}'");
+            return fixCount;
+        }
+
+        if (allControllers.Length == 1)
+        {
+            Debug.Log($"✅ [ChromaKey] 기존 ChromaKeyController 발견: '{allControllers[0].gameObject.name}'");
             return 0;
         }
 
-        // panelCapture 하위에서 "WebCam", "Preview", "Camera" 등 이름이 있는 RawImage 탐색
+        // ★ 2단계: 하나도 없으면 적절한 대상에 추가
         RawImage targetRawImage = null;
 
+        // panelCapture 하위에서 "WebCam", "Preview", "Camera" 등 이름이 있는 RawImage 탐색
         if (appState.panelCapture != null)
         {
             RawImage[] rawImages = appState.panelCapture.GetComponentsInChildren<RawImage>(true);
@@ -83,12 +118,11 @@ public class MasterSetupBuilder
                     break;
                 }
             }
-            // 이름 매칭 실패 시 차선: panelCapture 안의 첫 번째 RawImage
             if (targetRawImage == null && rawImages.Length > 0)
                 targetRawImage = rawImages[0];
         }
 
-        // panelCapture에도 없으면 씬 전체에서 "WebCamDisplay" 이름 검색
+        // 씬 전체에서 "WebCamDisplay" 이름 검색
         if (targetRawImage == null)
         {
             GameObject wcObj = GameObject.Find("WebCamDisplay");
@@ -96,40 +130,23 @@ public class MasterSetupBuilder
                 targetRawImage = wcObj.GetComponent<RawImage>();
         }
 
-        // 그래도 없으면 새로 생성 (Canvas 하위에)
         if (targetRawImage == null)
         {
-            Canvas canvas = Object.FindObjectOfType<Canvas>();
-            if (canvas == null)
-            {
-                Debug.LogError("❌ 씬에 Canvas가 없어서 ChromaKeyController를 생성할 수 없습니다!");
-                return 0;
-            }
-
-            GameObject chromaObj = new GameObject("WebCamDisplay");
-            chromaObj.transform.SetParent(canvas.transform, false);
-
-            targetRawImage = chromaObj.AddComponent<RawImage>();
-            RectTransform rt = chromaObj.GetComponent<RectTransform>();
-            rt.anchorMin = Vector2.zero;
-            rt.anchorMax = Vector2.one;
-            rt.sizeDelta = Vector2.zero;
-            rt.anchoredPosition = Vector2.zero;
-
-            // panelCapture가 있으면 그 아래로 이동
-            if (appState.panelCapture != null)
-            {
-                chromaObj.transform.SetParent(appState.panelCapture.transform, false);
-                chromaObj.transform.SetAsFirstSibling();
-            }
-
-            Debug.Log("✅ [ChromaKey] WebCamDisplay 오브젝트를 새로 생성했습니다.");
+            Debug.LogError("❌ ChromaKeyController를 붙일 대상(RawImage)을 찾을 수 없습니다! " +
+                           "panelCapture 하위에 'WebCamDisplay' RawImage를 수동으로 만들어주세요.");
+            return 0;
         }
 
-        // ChromaKeyController 컴포넌트 추가
-        Undo.RecordObject(targetRawImage.gameObject, "Add ChromaKeyController");
-        ChromaKeyController ckc = targetRawImage.gameObject.AddComponent<ChromaKeyController>();
+        // 이미 컴포넌트가 있는지 다시 확인 (비활성 오브젝트였을 수 있음)
+        ChromaKeyController existCheck = targetRawImage.GetComponent<ChromaKeyController>();
+        if (existCheck != null)
+        {
+            Debug.Log($"✅ [ChromaKey] 이미 '{targetRawImage.gameObject.name}'에 존재합니다.");
+            return 0;
+        }
 
+        Undo.RecordObject(targetRawImage.gameObject, "Add ChromaKeyController");
+        ChromaKeyController newCkc = targetRawImage.gameObject.AddComponent<ChromaKeyController>();
         Debug.Log($"✅ [ChromaKey] ChromaKeyController를 '{targetRawImage.gameObject.name}'에 추가했습니다.");
         return 1;
     }
