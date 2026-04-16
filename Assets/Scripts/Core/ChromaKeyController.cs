@@ -199,10 +199,13 @@ public class ChromaKeyController : MonoBehaviour
 
     private void Update()
     {
-        // 마우스 우클릭으로 화면 색상 추출 (관리자 모드 전용/테스트용)
-        if (Input.GetMouseButtonDown(1) && _webcamTexture != null && _webcamTexture.isPlaying)
+        // 관리자 모드(adminPanel 활성화) 상태에서만 왼쪽 클릭(0)으로 타겟 색상 추출
+        if (Input.GetMouseButtonDown(0) && _webcamTexture != null && _webcamTexture.isPlaying)
         {
-            ExtractColorFromMouse();
+            if (AppStateManager.Instance != null && AppStateManager.Instance.adminPanel != null && AppStateManager.Instance.adminPanel.activeSelf)
+            {
+                ExtractColorFromMouse();
+            }
         }
     }
 
