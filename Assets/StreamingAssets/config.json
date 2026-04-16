@@ -1,0 +1,166 @@
+{
+  "global": {
+    "targetColor": "#00B140",
+    "masterSensitivity": 0.35,
+    "masterSmoothness": 0.08,
+    "masterSpillRemoval": 0.15
+  },
+  "backgrounds": [
+    {
+      "bgName": "1",
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "transform": {
+        "zoom": 1.0,
+        "moveX": 0.0,
+        "moveY": 0.0
+      },
+      "color": {
+        "brightness": 0.0,
+        "contrast": 1.0,
+        "saturation": 1.0,
+        "hue": 0.0
+      },
+      "chroma": {
+        "useLocalChroma": false,
+        "localSensitivity": 0.35,
+        "localSmoothness": 0.08,
+        "localSpillRemoval": 0.15
+      }
+    },
+    {
+      "bgName": "2",
+      "crop": {
+        "top": 20,
+        "bottom": 10,
+        "left": 0,
+        "right": 0
+      },
+      "transform": {
+        "zoom": 1.05,
+        "moveX": 0.0,
+        "moveY": -0.02
+      },
+      "color": {
+        "brightness": 0.05,
+        "contrast": 1.1,
+        "saturation": 1.15,
+        "hue": 5.0
+      },
+      "chroma": {
+        "useLocalChroma": true,
+        "localSensitivity": 0.42,
+        "localSmoothness": 0.12,
+        "localSpillRemoval": 0.2
+      }
+    },
+    {
+      "bgName": "3",
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 15,
+        "right": 15
+      },
+      "transform": {
+        "zoom": 1.02,
+        "moveX": 0.0,
+        "moveY": 0.0
+      },
+      "color": {
+        "brightness": -0.05,
+        "contrast": 1.05,
+        "saturation": 0.95,
+        "hue": -3.0
+      },
+      "chroma": {
+        "useLocalChroma": false,
+        "localSensitivity": 0.35,
+        "localSmoothness": 0.08,
+        "localSpillRemoval": 0.15
+      }
+    },
+    {
+      "bgName": "4",
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "transform": {
+        "zoom": 1.0,
+        "moveX": 0.0,
+        "moveY": 0.0
+      },
+      "color": {
+        "brightness": 0.0,
+        "contrast": 1.0,
+        "saturation": 1.0,
+        "hue": 0.0
+      },
+      "chroma": {
+        "useLocalChroma": false,
+        "localSensitivity": 0.35,
+        "localSmoothness": 0.08,
+        "localSpillRemoval": 0.15
+      }
+    },
+    {
+      "bgName": "5",
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "transform": {
+        "zoom": 1.0,
+        "moveX": 0.0,
+        "moveY": 0.0
+      },
+      "color": {
+        "brightness": 0.0,
+        "contrast": 1.0,
+        "saturation": 1.0,
+        "hue": 0.0
+      },
+      "chroma": {
+        "useLocalChroma": false,
+        "localSensitivity": 0.35,
+        "localSmoothness": 0.08,
+        "localSpillRemoval": 0.15
+      }
+    },
+    {
+      "bgName": "6",
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "transform": {
+        "zoom": 1.0,
+        "moveX": 0.0,
+        "moveY": 0.0
+      },
+      "color": {
+        "brightness": 0.0,
+        "contrast": 1.0,
+        "saturation": 1.0,
+        "hue": 0.0
+      },
+      "chroma": {
+        "useLocalChroma": false,
+        "localSensitivity": 0.35,
+        "localSmoothness": 0.08,
+        "localSpillRemoval": 0.15
+      }
+    }
+  ]
+}

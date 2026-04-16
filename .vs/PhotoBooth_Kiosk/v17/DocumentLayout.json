@@ -1,0 +1,121 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|c:\\users\\buvi\\photobooth_kiosk\\assets\\scripts\\core\\appstatemanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\core\\appstatemanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|C:\\Users\\Buvi\\PhotoBooth_Kiosk\\assets\\scripts\\capture\\photocapturemanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\capture\\photocapturemanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|C:\\Users\\Buvi\\PhotoBooth_Kiosk\\assets\\scripts\\core\\qrservermanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\core\\qrservermanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|C:\\Users\\Buvi\\PhotoBooth_Kiosk\\assets\\scripts\\capture\\chromakeycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\capture\\chromakeycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|C:\\Users\\Buvi\\PhotoBooth_Kiosk\\assets\\scripts\\config\\configmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\config\\configmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|C:\\Users\\Buvi\\PhotoBooth_Kiosk\\assets\\scripts\\capture\\webcammanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{596F7A27-CC59-14B9-01A7-DB2FF73AD607}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\capture\\webcammanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 5,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{34e76e81-ee4a-11d0-ae2e-00a0c90fffc3}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "QRServerManager.cs",
+              "DocumentMoniker": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Core\\QRServerManager.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Core\\QRServerManager.cs",
+              "ToolTip": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Core\\QRServerManager.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Core\\QRServerManager.cs",
+              "ViewState": "AQIAAPIAAAAAAAAAAAAswBABAAABAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-18T02:04:29.991Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "PhotoCaptureManager.cs",
+              "DocumentMoniker": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Capture\\PhotoCaptureManager.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Capture\\PhotoCaptureManager.cs",
+              "ToolTip": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Capture\\PhotoCaptureManager.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Capture\\PhotoCaptureManager.cs",
+              "ViewState": "AQIAAI0AAAAAAAAAAAAswKsAAAABAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-13T00:54:51.117Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "ChromaKeyController.cs",
+              "DocumentMoniker": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Capture\\ChromaKeyController.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Capture\\ChromaKeyController.cs",
+              "ToolTip": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Capture\\ChromaKeyController.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Capture\\ChromaKeyController.cs",
+              "ViewState": "AQIAAIAAAAAAAAAAAAAIwJEAAAABAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-11T07:44:18.347Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "WebCamManager.cs",
+              "DocumentMoniker": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Capture\\WebCamManager.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Capture\\WebCamManager.cs",
+              "ToolTip": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Capture\\WebCamManager.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Capture\\WebCamManager.cs",
+              "ViewState": "AQIAAAEAAAAAAAAAAAAmwCwAAAABAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T07:39:13.974Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "AppStateManager.cs",
+              "DocumentMoniker": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Core\\AppStateManager.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Core\\AppStateManager.cs",
+              "ToolTip": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Core\\AppStateManager.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Core\\AppStateManager.cs",
+              "ViewState": "AQIAAHMAAAAAAAAAAAAQwI0AAAABAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T07:31:28.201Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "ConfigManager.cs",
+              "DocumentMoniker": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Config\\ConfigManager.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Config\\ConfigManager.cs",
+              "ToolTip": "C:\\Users\\Buvi\\PhotoBooth_Kiosk\\Assets\\Scripts\\Config\\ConfigManager.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Config\\ConfigManager.cs",
+              "ViewState": "AQIAACAAAAAAAAAAAAAowCoAAAAJAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T07:21:52.904Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

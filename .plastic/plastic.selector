@@ -1,0 +1,4 @@
+repository "PhotoBooth_Kiosk/PhotoBooth_Kiosk@14569720132206@cloud"
+  path "/"
+    br "/main"
+    co "/main"

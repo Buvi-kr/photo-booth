@@ -1,0 +1,48 @@
+# Unity default ignore files
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+
+# MemoryCaptures can get very large
+/[Mm]emoryCaptures/
+
+# Asset meta data synchronization files
+# /[Aa]ssets/*.meta
+
+# VS/MonoDevelop solution and project files
+ExportedObj/
+.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity3D generated meta files
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Unity3D generated file on crash reports
+sysinfo.txt
+
+# Builds
+*.apk
+*.unitypackage
+
+# Desktop
+.DS_Store
+Thumbs.db
