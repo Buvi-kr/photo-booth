@@ -237,8 +237,12 @@ public class ChromaKeyController : MonoBehaviour
                 var globalCfg = PhotoBoothConfigLoader.Instance.Config.Global;
                 globalCfg.TargetColor = hexColor;
 
+                // 셰이더에 즉시 반영 (시각적 피드백)
+                if (_chromaMaterial != null)
+                    _chromaMaterial.SetColor(ID_TargetColor, pickedColor);
+
                 PhotoBoothConfigLoader.Instance.SaveConfig();
-                Debug.Log("[ChromaKey] 🎨 색상 추출 완료: " + hexColor + " (저장 완료)");
+                Debug.Log("[ChromaKey] 🎨 색상 추출: " + hexColor + " → 셰이더 즉시 반영 + config 저장 완료");
             }
         }
     }

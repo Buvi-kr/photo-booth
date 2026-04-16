@@ -91,6 +91,11 @@ public class AppStateManager : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.Escape)) ResetToStart();
 
+        // 관리자(Calibration) 모드에서는 마우스/키 입력을 상태전환에 사용하지 않음
+        // → ChromaKeyController 의 색상 추출이 정상 작동하도록 보호
+        if (currentState == AppState.Calibration)
+            return;
+
         if (currentState == AppState.SelectBG)
         {
             if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1)) SelectBackgroundAndGoNext(0);
