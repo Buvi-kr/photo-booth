@@ -224,56 +224,110 @@ public class MasterSetupBuilder
             return 0;
         }
 
-        Undo.RegisterFullObjectHierarchyUndo(adminPanel, "Setup Admin Panel");
+        Undo.RegisterFullObjectHierarchyUndo(adminPanel, "Rebuild Admin Panel");
+
+        // ★★★ 핵심: 기존 자식 오브젝트를 전부 삭제하고 깨끗하게 시작 ★★★
+        for (int i = adminPanel.transform.childCount - 1; i >= 0; i--)
+        {
+            Object.DestroyImmediate(adminPanel.transform.GetChild(i).gameObject);
+        }
+        Debug.Log("🗑️ [Admin] 기존 AdminPanel 자식 요소 전부 삭제 완료");
+
+        // ── adminPanel 자체 설정: 전체 화면, 반투명 배경, Raycast ON ──
+        RectTransform panelRT = adminPanel.GetComponent<RectTransform>();
+        panelRT.anchorMin = Vector2.zero;
+        panelRT.anchorMax = Vector2.one;
+        panelRT.sizeDelta = Vector2.zero;
+        panelRT.anchoredPosition = Vector2.zero;
+
+        Image panelBg = adminPanel.GetComponent<Image>();
+        if (panelBg == null) panelBg = adminPanel.AddComponent<Image>();
+        panelBg.color = new Color(0, 0, 0, 0.7f);      // 반투명 검정
+        panelBg.raycastTarget = true;                     // ★ 뒤쪽 클릭 차단!
+
+        // 레이아웃 컴포넌트 전부 제거
+        foreach (var lg in adminPanel.GetComponents<LayoutGroup>()) Object.DestroyImmediate(lg);
+        foreach (var csf in adminPanel.GetComponents<ContentSizeFitter>()) Object.DestroyImmediate(csf);
+
         int count = 0;
 
-        // ★ adminPanel 자체의 레이아웃 컴포넌트 비활성화 (자식 위치 강제 제어 방지)
-        DisableLayoutComponents(adminPanel);
+        // ══════════════════════════════════════════════════════════════════
+        //  상단 영역: 제목 + 대상 이름
+        // ══════════════════════════════════════════════════════════════════
 
-        // ── 슬라이더 연결 (이름 검색 → 실패 시 타입 순서 검색) ──
-        count += AssignSliders(appState, adminPanel);
-
-        // ── 한글 폰트 찾기 (NotoSansCJKkr, Pretendard 등 프로젝트 내 CJK폰트 검색) ──
-        TMP_FontAsset koreanFont = FindKoreanFont();
-
-        // ── 텍스트: 제목 (상단 중앙) ──
-        appState.adminStepTitleText = EnsureTextMeshPro(adminPanel, "AdminStepTitleText",
-            "Step 1: Master", 28, TextAlignmentOptions.Center,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -40), new Vector2(500, 50),
-            koreanFont);
+        appState.adminStepTitleText = CreateTMP(adminPanel, "AdminStepTitleText",
+            "Step 1: Master Chroma",
+            32, FontStyle.Bold, Color.white, TextAlignmentOptions.Center,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -30), new Vector2(600, 50));
         count++;
 
-        // ── 텍스트: 대상 이름 (상단 중앙, 제목 아래) ──
-        appState.adminTargetNameText = EnsureTextMeshPro(adminPanel, "AdminTargetNameText",
-            "Target: Global Preview", 22, TextAlignmentOptions.Center,
-            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -80), new Vector2(500, 40),
-            koreanFont);
+        appState.adminTargetNameText = CreateTMP(adminPanel, "AdminTargetNameText",
+            "Target: Global",
+            22, FontStyle.Normal, new Color(0.8f, 0.9f, 1f), TextAlignmentOptions.Center,
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -70), new Vector2(600, 40));
         count++;
 
-        // ── 토글: Use Local Chroma (슬라이더들 아래) ──
-        appState.useLocalChromaToggle = EnsureToggle(adminPanel, "UseLocalChromaToggle",
-            "Local Override", new Vector2(0.5f, 0.5f), new Vector2(0, -100), new Vector2(350, 30));
+        // ══════════════════════════════════════════════════════════════════
+        //  중앙 좌측: 슬라이더 3개 + 라벨
+        // ══════════════════════════════════════════════════════════════════
+
+        float sliderX = -300f;   // 중앙에서 왼쪽으로 300
+        float sliderStartY = 60f;
+        float sliderGap = 60f;
+
+        appState.sensitivitySlider = CreateSlider(adminPanel, "SensitivitySlider", "Sensitivity",
+            new Vector2(0.5f, 0.5f), new Vector2(sliderX, sliderStartY));
         count++;
 
-        // ── 버튼: 이전단계 (좌하단) ──
-        EnsureButton(adminPanel, "PrevAdminBtn", "< Prev",
-            new Vector2(0f, 0f), new Vector2(100, 60), new Vector2(160, 50),
+        appState.smoothnessSlider = CreateSlider(adminPanel, "SmoothnessSlider", "Smoothness",
+            new Vector2(0.5f, 0.5f), new Vector2(sliderX, sliderStartY - sliderGap));
+        count++;
+
+        appState.spillRemovalSlider = CreateSlider(adminPanel, "SpillSlider", "Spill Removal",
+            new Vector2(0.5f, 0.5f), new Vector2(sliderX, sliderStartY - sliderGap * 2));
+        count++;
+
+        // ══════════════════════════════════════════════════════════════════
+        //  중앙 우측: 색상 추출 안내 텍스트
+        // ══════════════════════════════════════════════════════════════════
+
+        CreateTMP(adminPanel, "ColorPickHint",
+            "Click webcam\nto pick color",
+            20, FontStyle.Italic, new Color(0.5f, 1f, 0.5f), TextAlignmentOptions.Center,
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(300, 30), new Vector2(250, 80));
+
+        // ══════════════════════════════════════════════════════════════════
+        //  중앙: 로컬 크로마 토글
+        // ══════════════════════════════════════════════════════════════════
+
+        appState.useLocalChromaToggle = CreateToggle(adminPanel, "UseLocalChromaToggle",
+            "Use Local Override",
+            new Vector2(0.5f, 0.5f), new Vector2(0, -130), new Vector2(300, 35));
+        count++;
+
+        // ══════════════════════════════════════════════════════════════════
+        //  하단: Prev / Save / Next 버튼
+        // ══════════════════════════════════════════════════════════════════
+
+        CreateButton(adminPanel, "PrevAdminBtn", "< PREV",
+            new Color(0.3f, 0.3f, 0.3f), Color.white,
+            new Vector2(0f, 0f), new Vector2(120, 50), new Vector2(180, 60),
             appState, "PrevAdminStep");
         count++;
 
-        // ── 버튼: 다음단계 (우하단) ──
-        EnsureButton(adminPanel, "NextAdminBtn", "Next >",
-            new Vector2(1f, 0f), new Vector2(-100, 60), new Vector2(160, 50),
-            appState, "NextAdminStep");
-        count++;
-
-        // ── 버튼: 설정 저장 (하단 중앙) ──
-        EnsureButton(adminPanel, "SaveAdminBtn", "SAVE",
-            new Vector2(0.5f, 0f), new Vector2(0, 60), new Vector2(200, 60),
+        CreateButton(adminPanel, "SaveAdminBtn", "SAVE CONFIG",
+            new Color(0.1f, 0.5f, 0.1f), Color.white,
+            new Vector2(0.5f, 0f), new Vector2(0, 50), new Vector2(220, 60),
             appState, "ApplyAndSaveAdminConfig");
         count++;
 
-        Debug.Log($"✅ [Admin] 관리자 패널 UI {count}개 항목 세팅 완료");
+        CreateButton(adminPanel, "NextAdminBtn", "NEXT >",
+            new Color(0.3f, 0.3f, 0.3f), Color.white,
+            new Vector2(1f, 0f), new Vector2(-120, 50), new Vector2(180, 60),
+            appState, "NextAdminStep");
+        count++;
+
+        Debug.Log($"✅ [Admin] 관리자 패널 UI {count}개 항목 완전 재구축 완료!");
         return count;
     }
 
@@ -406,159 +460,26 @@ public class MasterSetupBuilder
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    //  헬퍼 메서드들
+    //  헬퍼: Create 계열 (처음부터 생성, 중복 걱정 없음)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// adminPanel에 있는 VerticalLayoutGroup, HorizontalLayoutGroup,
-    /// GridLayoutGroup, ContentSizeFitter 등을 비활성화하여
-    /// 자식 요소가 강제 재배치되는 것을 방지한다.
-    /// </summary>
-    private static void DisableLayoutComponents(GameObject panel)
+    private static TextMeshProUGUI CreateTMP(GameObject parent, string objName,
+        string text, int fontSize, FontStyle style, Color color,
+        TextAlignmentOptions alignment,
+        Vector2 anchorMin, Vector2 anchorMax, Vector2 pos, Vector2 size)
     {
-        // 패널 자체
-        foreach (var lg in panel.GetComponents<LayoutGroup>())
-        {
-            lg.enabled = false;
-            Debug.Log($"✅ [Admin] LayoutGroup '{lg.GetType().Name}' 비활성화");
-        }
-        foreach (var csf in panel.GetComponents<ContentSizeFitter>())
-        {
-            csf.enabled = false;
-            Debug.Log($"✅ [Admin] ContentSizeFitter 비활성화");
-        }
-    }
-
-    /// <summary>
-    /// 프로젝트 내에서 한글을 지원하는 TMP 폰트를 찾는다.
-    /// NotoSansCJK, Pretendard, KoPub 등 이름에 CJK/Korean 등이 포함된 폰트를 우선 검색.
-    /// 못 찾으면 null (기본 LiberationSans 사용 - 영문만 표시됨).
-    /// </summary>
-    private static TMP_FontAsset FindKoreanFont()
-    {
-        string[] guids = AssetDatabase.FindAssets("t:TMP_FontAsset");
-        TMP_FontAsset fallback = null;
-
-        foreach (string guid in guids)
-        {
-            string path = AssetDatabase.GUIDToAssetPath(guid);
-            string fileName = Path.GetFileNameWithoutExtension(path).ToLower();
-
-            // 한글 폰트 우선순위 매칭
-            if (fileName.Contains("noto") || fileName.Contains("cjk") ||
-                fileName.Contains("korean") || fileName.Contains("pretendard") ||
-                fileName.Contains("kopub") || fileName.Contains("spoqa") ||
-                fileName.Contains("nanumgothic") || fileName.Contains("malgun"))
-            {
-                var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
-                if (font != null)
-                {
-                    Debug.Log($"✅ [Font] 한글 폰트 발견: {path}");
-                    return font;
-                }
-            }
-
-            // LiberationSans 가 아닌 다른 폰트가 있으면 후보로 저장
-            if (!fileName.Contains("liberation") && fallback == null)
-            {
-                fallback = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
-            }
-        }
-
-        if (fallback != null)
-        {
-            Debug.LogWarning($"⚠️ [Font] 한글 전용 폰트를 찾지 못했습니다. '{fallback.name}' 을 대체 사용합니다. " +
-                             "한글이 □로 표시되면 NotoSansCJK SDF 폰트를 프로젝트에 추가해주세요.");
-            return fallback;
-        }
-
-        Debug.LogWarning("⚠️ [Font] 프로젝트에 한글 폰트가 없습니다! " +
-                         "Admin UI 텍스트가 □로 표시됩니다. " +
-                         "NotoSansCJK SDF 폰트를 Assets/Fonts 에 추가해주세요.");
-        return null;
-    }
-
-    private static int AssignSliders(AppStateManager appState, GameObject adminPanel)
-    {
-        int count = 0;
-
-        appState.sensitivitySlider = FindSliderByName(adminPanel, "SensitivitySlider", "Sensitivity");
-        appState.smoothnessSlider = FindSliderByName(adminPanel, "SmoothnessSlider", "Smoothness");
-        appState.spillRemovalSlider = FindSliderByName(adminPanel, "SpillSlider", "Spill", "SpillRemoval");
-
-        Slider[] allSliders = adminPanel.GetComponentsInChildren<Slider>(true);
-        if (appState.sensitivitySlider == null && allSliders.Length >= 1)
-        {
-            appState.sensitivitySlider = allSliders[0];
-            Debug.LogWarning($"⚠️ SensitivitySlider를 이름으로 못 찾아 {allSliders[0].name}(순서 1번)에 할당");
-        }
-        if (appState.smoothnessSlider == null && allSliders.Length >= 2)
-        {
-            appState.smoothnessSlider = allSliders[1];
-            Debug.LogWarning($"⚠️ SmoothnessSlider를 이름으로 못 찾아 {allSliders[1].name}(순서 2번)에 할당");
-        }
-        if (appState.spillRemovalSlider == null && allSliders.Length >= 3)
-        {
-            appState.spillRemovalSlider = allSliders[2];
-            Debug.LogWarning($"⚠️ SpillSlider를 이름으로 못 찾아 {allSliders[2].name}(순서 3번)에 할당");
-        }
-
-        if (appState.sensitivitySlider != null) count++;
-        if (appState.smoothnessSlider != null) count++;
-        if (appState.spillRemovalSlider != null) count++;
-
-        return count;
-    }
-
-    private static Slider FindSliderByName(GameObject parent, params string[] names)
-    {
-        foreach (string name in names)
-        {
-            Transform found = parent.transform.Find(name);
-            if (found != null)
-            {
-                Slider s = found.GetComponent<Slider>();
-                if (s != null) return s;
-            }
-        }
-
-        Slider[] allSliders = parent.GetComponentsInChildren<Slider>(true);
-        foreach (Slider s in allSliders)
-        {
-            string lowerName = s.name.ToLower();
-            foreach (string name in names)
-            {
-                if (lowerName.Contains(name.ToLower())) return s;
-            }
-        }
-
-        return null;
-    }
-
-    private static TextMeshProUGUI EnsureTextMeshPro(GameObject parent, string objName,
-        string defaultText, int fontSize, TextAlignmentOptions alignment,
-        Vector2 anchorMin, Vector2 anchorMax, Vector2 pos, Vector2 size,
-        TMP_FontAsset font)
-    {
-        // ★ 기존 오브젝트가 있으면 삭제 후 재생성 (레이아웃 오염 방지)
-        Transform existing = parent.transform.Find(objName);
-        if (existing != null)
-            Object.DestroyImmediate(existing.gameObject);
-
         GameObject obj = new GameObject(objName);
         obj.transform.SetParent(parent.transform, false);
 
         var tmp = obj.AddComponent<TextMeshProUGUI>();
-        tmp.text = defaultText;
+        tmp.text = text;
         tmp.fontSize = fontSize;
+        tmp.fontStyle = (TMPro.FontStyles)style;
         tmp.alignment = alignment;
-        tmp.color = Color.white;
-        tmp.enableWordWrapping = false;
+        tmp.color = color;
+        tmp.enableWordWrapping = true;
         tmp.overflowMode = TextOverflowModes.Overflow;
-
-        // 한글 폰트 적용 (있으면)
-        if (font != null)
-            tmp.font = font;
+        tmp.raycastTarget = false;
 
         RectTransform rt = obj.GetComponent<RectTransform>();
         rt.anchorMin = anchorMin;
@@ -566,34 +487,68 @@ public class MasterSetupBuilder
         rt.anchoredPosition = pos;
         rt.sizeDelta = size;
 
-        // 레이아웃 그룹 무시
-        var le = obj.AddComponent<LayoutElement>();
-        le.ignoreLayout = true;
-
-        Debug.Log($"✅ [Admin] '{objName}' 텍스트 UI 생성 (font: {(font != null ? font.name : "default")})");
         return tmp;
     }
 
-    private static Toggle EnsureToggle(GameObject parent, string objName,
-        string labelText, Vector2 pivot, Vector2 pos, Vector2 size)
+    private static Slider CreateSlider(GameObject parent, string objName, string labelText,
+        Vector2 anchor, Vector2 pos)
     {
-        // ★ 기존 오브젝트 삭제 후 재생성
-        Transform existing = parent.transform.Find(objName);
-        if (existing != null)
-            Object.DestroyImmediate(existing.gameObject);
+        // 컨테이너
+        GameObject container = new GameObject(objName);
+        container.transform.SetParent(parent.transform, false);
 
+        RectTransform crt = container.AddComponent<RectTransform>();
+        crt.anchorMin = anchor;
+        crt.anchorMax = anchor;
+        crt.anchoredPosition = pos;
+        crt.sizeDelta = new Vector2(400, 40);
+
+        // 라벨
+        GameObject labelObj = new GameObject("Label");
+        labelObj.transform.SetParent(container.transform, false);
+        var labelTMP = labelObj.AddComponent<TextMeshProUGUI>();
+        labelTMP.text = labelText;
+        labelTMP.fontSize = 16;
+        labelTMP.color = new Color(0.9f, 0.9f, 0.9f);
+        labelTMP.alignment = TextAlignmentOptions.Left;
+        labelTMP.raycastTarget = false;
+        RectTransform lrt = labelObj.GetComponent<RectTransform>();
+        lrt.anchorMin = new Vector2(0, 0.5f);
+        lrt.anchorMax = new Vector2(0, 0.5f);
+        lrt.anchoredPosition = new Vector2(60, 0);
+        lrt.sizeDelta = new Vector2(120, 30);
+
+        // 슬라이더 (Unity 기본 슬라이더 사용)
+        GameObject sliderObj = DefaultControls.CreateSlider(new DefaultControls.Resources());
+        sliderObj.name = "Slider";
+        sliderObj.transform.SetParent(container.transform, false);
+        RectTransform srt = sliderObj.GetComponent<RectTransform>();
+        srt.anchorMin = new Vector2(0.3f, 0f);
+        srt.anchorMax = new Vector2(1f, 1f);
+        srt.sizeDelta = Vector2.zero;
+        srt.anchoredPosition = Vector2.zero;
+
+        Slider slider = sliderObj.GetComponent<Slider>();
+        slider.minValue = 0f;
+        slider.maxValue = 1f;
+        slider.value = 0.5f;
+
+        Debug.Log($"✅ [Admin] '{objName}' 슬라이더 생성");
+        return slider;
+    }
+
+    private static Toggle CreateToggle(GameObject parent, string objName, string labelText,
+        Vector2 anchor, Vector2 pos, Vector2 size)
+    {
         GameObject toggleObj = DefaultControls.CreateToggle(new DefaultControls.Resources());
         toggleObj.name = objName;
         toggleObj.transform.SetParent(parent.transform, false);
 
         RectTransform rt = toggleObj.GetComponent<RectTransform>();
-        rt.anchorMin = pivot;
-        rt.anchorMax = pivot;
+        rt.anchorMin = anchor;
+        rt.anchorMax = anchor;
         rt.anchoredPosition = pos;
         rt.sizeDelta = size;
-
-        var le = toggleObj.AddComponent<LayoutElement>();
-        le.ignoreLayout = true;
 
         Text legacyLabel = toggleObj.GetComponentInChildren<Text>();
         if (legacyLabel != null)
@@ -604,19 +559,15 @@ public class MasterSetupBuilder
             legacyLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
         }
 
-        Debug.Log($"✅ [Admin] '{objName}' 토글 UI 생성");
+        Debug.Log($"✅ [Admin] '{objName}' 토글 생성");
         return toggleObj.GetComponent<Toggle>();
     }
 
-    private static void EnsureButton(GameObject parent, string objName, string label,
+    private static void CreateButton(GameObject parent, string objName, string label,
+        Color bgColor, Color textColor,
         Vector2 anchor, Vector2 pos, Vector2 size,
         AppStateManager target, string methodName)
     {
-        // ★ 기존 오브젝트 삭제 후 재생성 
-        Transform existing = parent.transform.Find(objName);
-        if (existing != null)
-            Object.DestroyImmediate(existing.gameObject);
-
         GameObject btnObj = DefaultControls.CreateButton(new DefaultControls.Resources());
         btnObj.name = objName;
         btnObj.transform.SetParent(parent.transform, false);
@@ -627,22 +578,22 @@ public class MasterSetupBuilder
         rt.anchoredPosition = pos;
         rt.sizeDelta = size;
 
-        var le = btnObj.AddComponent<LayoutElement>();
-        le.ignoreLayout = true;
+        // 배경색 변경
+        Image btnImage = btnObj.GetComponent<Image>();
+        if (btnImage != null) btnImage.color = bgColor;
 
+        // 라벨 변경
         Text btnLabel = btnObj.GetComponentInChildren<Text>();
         if (btnLabel != null)
         {
             btnLabel.text = label;
             btnLabel.fontSize = 18;
             btnLabel.fontStyle = FontStyle.Bold;
-            btnLabel.color = Color.black;
+            btnLabel.color = textColor;
         }
 
-        Button btn = btnObj.GetComponent<Button>();
-        Debug.Log($"✅ [Admin] '{objName}' 버튼 UI 생성");
-
         // 이벤트 바인딩
+        Button btn = btnObj.GetComponent<Button>();
         while (btn.onClick.GetPersistentEventCount() > 0)
             UnityEditor.Events.UnityEventTools.RemovePersistentListener(btn.onClick, 0);
 
@@ -653,10 +604,11 @@ public class MasterSetupBuilder
                 typeof(UnityEngine.Events.UnityAction), target, method)
                 as UnityEngine.Events.UnityAction;
             UnityEditor.Events.UnityEventTools.AddPersistentListener(btn.onClick, action);
+            Debug.Log($"✅ [Admin] '{objName}' 버튼 생성 → {methodName}");
         }
         else
         {
-            Debug.LogError($"❌ [Admin] AppStateManager에 '{methodName}' 메서드를 찾을 수 없습니다!");
+            Debug.LogError($"❌ AppStateManager에 '{methodName}' 메서드가 없습니다!");
         }
     }
 
