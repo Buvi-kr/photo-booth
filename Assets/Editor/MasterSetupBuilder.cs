@@ -487,7 +487,14 @@ public class MasterSetupBuilder
                 as UnityEngine.Events.UnityAction<int>;
             UnityEditor.Events.UnityEventTools.AddIntPersistentListener(btn.onClick, action, bgIndex);
 
-            Debug.Log($"✅ [SelectBG] '{btn.name}' → 배경 {bgIndex}번 연결");
+            // ── 버튼 크기 조정 (배경 네모 뚫림 방지: 가로-20, 세로-40)
+            RectTransform rt = btn.GetComponent<RectTransform>();
+            if (rt != null)
+            {
+                rt.sizeDelta = new Vector2(rt.sizeDelta.x - 20, rt.sizeDelta.y - 40);
+            }
+
+            Debug.Log($"✅ [SelectBG] '{btn.name}' → 배경 {bgIndex}번 연결 & 크기 조정(X:-20, Y:-40)");
             bgIndex++;
             count++;
         }
