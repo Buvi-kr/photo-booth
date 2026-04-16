@@ -142,8 +142,12 @@ public class OverlayBGManager : MonoBehaviour
         for (int i = 0; i < btnCount; i++)
         {
             if (i >= count) break;
+            if (bgThumbnailButtons[i] == null) continue;
             
-            string bgName = loader.Config.Backgrounds[i].BgName;
+            var bgConf = loader.Config.Backgrounds[i];
+            if (bgConf == null || string.IsNullOrEmpty(bgConf.BgName)) continue;
+
+            string bgName = bgConf.BgName;
             
             // 1순위: _thumbnail 파일, 2순위: 원본 파일
             string thumbPath = FindBackgroundFile(bgName + "_thumbnail");

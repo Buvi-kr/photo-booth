@@ -1,6 +1,6 @@
 ﻿{
   "global": {
-    "targetColor": "#EFF6F5",
+    "targetColor": "#F5F3F5",
     "masterSensitivity": 0.35,
     "masterSmoothness": 0.08,
     "masterSpillRemoval": 0.171718121
@@ -27,10 +27,10 @@
         "moveY": 0.0
       },
       "color": {
-        "brightness": 0.02895677,
-        "contrast": 1.02895761,
-        "saturation": 1.0,
-        "hue": -8.583069E-05
+        "brightness": 0.005120635,
+        "contrast": 0.9812863,
+        "saturation": 1.01191771,
+        "hue": -2.14518785
       },
       "chroma": {
         "useLocalChroma": false,
