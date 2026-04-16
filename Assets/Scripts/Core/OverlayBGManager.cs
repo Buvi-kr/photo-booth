@@ -136,9 +136,9 @@ public class OverlayBGManager : MonoBehaviour
         {
             foreach (var t in _thumbTextures) if (t != null) Destroy(t);
         }
+        int btnCount = bgThumbnailButtons.Length;
         _thumbTextures = new Texture2D[btnCount];
 
-        int btnCount = bgThumbnailButtons.Length;
         for (int i = 0; i < btnCount; i++)
         {
             if (i >= count) break;
