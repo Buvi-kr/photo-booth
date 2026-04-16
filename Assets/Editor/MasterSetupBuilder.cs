@@ -34,18 +34,156 @@ public class MasterSetupBuilder
         // ── 1단계: 비디오 파일명 교정 ──
         fixCount += FixVideoFileNames(appState);
 
-        // ── 2단계: 관리자 패널 UI 완전 세팅 ──
+        // ── 2단계: ChromaKeyController 자동 생성/연결 ──
+        fixCount += EnsureChromaKeyController(appState);
+
+        // ── 3단계: OverlayBGManager 자동 연결 ──
+        fixCount += EnsureOverlayBGManager(appState);
+
+        // ── 4단계: 관리자 패널 UI 완전 세팅 ──
         fixCount += SetupAdminPanel(appState);
 
-        // ── 3단계: 배경 선택 패널 버튼 연결 ──
+        // ── 5단계: 배경 선택 패널 버튼 연결 ──
         fixCount += SetupSelectBGPanel(appState);
 
-        // ── 4단계: 건강 체크 (Validation) ──
+        // ── 6단계: 건강 체크 (Validation) ──
         RunValidation(appState);
 
         EditorUtility.SetDirty(appState);
         Debug.Log($"\n👑 [MasterSetup] 올인원 세팅 완료! 총 {fixCount}개 항목이 자동 처리되었습니다.");
         Debug.Log("💾 반드시 Ctrl+S 로 씬을 저장해주세요!\n");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  2단계: ChromaKeyController 자동 생성/연결
+    //  panelCapture 안의 RawImage를 찾아 붙이거나, 없으면 새로 만든다.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private static int EnsureChromaKeyController(AppStateManager appState)
+    {
+        ChromaKeyController existing = Object.FindObjectOfType<ChromaKeyController>();
+        if (existing != null)
+        {
+            Debug.Log($"✅ [ChromaKey] 기존 ChromaKeyController 발견: '{existing.gameObject.name}'");
+            return 0;
+        }
+
+        // panelCapture 하위에서 "WebCam", "Preview", "Camera" 등 이름이 있는 RawImage 탐색
+        RawImage targetRawImage = null;
+
+        if (appState.panelCapture != null)
+        {
+            RawImage[] rawImages = appState.panelCapture.GetComponentsInChildren<RawImage>(true);
+            foreach (var ri in rawImages)
+            {
+                string n = ri.name.ToLower();
+                if (n.Contains("webcam") || n.Contains("camera") || n.Contains("preview") || n.Contains("chroma"))
+                {
+                    targetRawImage = ri;
+                    break;
+                }
+            }
+            // 이름 매칭 실패 시 차선: panelCapture 안의 첫 번째 RawImage
+            if (targetRawImage == null && rawImages.Length > 0)
+                targetRawImage = rawImages[0];
+        }
+
+        // panelCapture에도 없으면 씬 전체에서 "WebCamDisplay" 이름 검색
+        if (targetRawImage == null)
+        {
+            GameObject wcObj = GameObject.Find("WebCamDisplay");
+            if (wcObj != null)
+                targetRawImage = wcObj.GetComponent<RawImage>();
+        }
+
+        // 그래도 없으면 새로 생성 (Canvas 하위에)
+        if (targetRawImage == null)
+        {
+            Canvas canvas = Object.FindObjectOfType<Canvas>();
+            if (canvas == null)
+            {
+                Debug.LogError("❌ 씬에 Canvas가 없어서 ChromaKeyController를 생성할 수 없습니다!");
+                return 0;
+            }
+
+            GameObject chromaObj = new GameObject("WebCamDisplay");
+            chromaObj.transform.SetParent(canvas.transform, false);
+
+            targetRawImage = chromaObj.AddComponent<RawImage>();
+            RectTransform rt = chromaObj.GetComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.sizeDelta = Vector2.zero;
+            rt.anchoredPosition = Vector2.zero;
+
+            // panelCapture가 있으면 그 아래로 이동
+            if (appState.panelCapture != null)
+            {
+                chromaObj.transform.SetParent(appState.panelCapture.transform, false);
+                chromaObj.transform.SetAsFirstSibling();
+            }
+
+            Debug.Log("✅ [ChromaKey] WebCamDisplay 오브젝트를 새로 생성했습니다.");
+        }
+
+        // ChromaKeyController 컴포넌트 추가
+        Undo.RecordObject(targetRawImage.gameObject, "Add ChromaKeyController");
+        ChromaKeyController ckc = targetRawImage.gameObject.AddComponent<ChromaKeyController>();
+
+        Debug.Log($"✅ [ChromaKey] ChromaKeyController를 '{targetRawImage.gameObject.name}'에 추가했습니다.");
+        return 1;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  3단계: OverlayBGManager 자동 연결
+    //  chromaKeyController 슬롯이 비어있으면 자동으로 찾아 연결한다.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private static int EnsureOverlayBGManager(AppStateManager appState)
+    {
+        OverlayBGManager overlayMgr = Object.FindObjectOfType<OverlayBGManager>();
+        if (overlayMgr == null)
+        {
+            Debug.LogWarning("⚠️ [Overlay] 씬에 OverlayBGManager가 없습니다. 연결을 건너뜁니다.");
+            return 0;
+        }
+
+        int count = 0;
+        Undo.RecordObject(overlayMgr, "Wire OverlayBGManager");
+
+        // chromaKeyController 슬롯 자동 연결
+        if (overlayMgr.chromaKeyController == null)
+        {
+            ChromaKeyController ckc = Object.FindObjectOfType<ChromaKeyController>();
+            if (ckc != null)
+            {
+                overlayMgr.chromaKeyController = ckc;
+                Debug.Log($"✅ [Overlay] chromaKeyController → '{ckc.gameObject.name}' 자동 연결");
+                count++;
+            }
+        }
+
+        // backgroundImageDisplay 슬롯 자동 연결
+        if (overlayMgr.backgroundImageDisplay == null)
+        {
+            // "Background", "BG", "Overlay" 이름이 있는 RawImage 검색
+            RawImage[] allRaw = Object.FindObjectsOfType<RawImage>(true);
+            foreach (var ri in allRaw)
+            {
+                if (ri.GetComponent<ChromaKeyController>() != null) continue; // 웹캠용은 스킵
+                string n = ri.name.ToLower();
+                if (n.Contains("background") || n.Contains("overlay") || n.Contains("bg"))
+                {
+                    overlayMgr.backgroundImageDisplay = ri;
+                    Debug.Log($"✅ [Overlay] backgroundImageDisplay → '{ri.gameObject.name}' 자동 연결");
+                    count++;
+                    break;
+                }
+            }
+        }
+
+        EditorUtility.SetDirty(overlayMgr);
+        return count;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
