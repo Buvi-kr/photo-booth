@@ -197,6 +197,49 @@ public class ChromaKeyController : MonoBehaviour
                   " (" + reqW + "x" + reqH + " @" + reqFPS + "fps)");
     }
 
+    private void Update()
+    {
+        // 마우스 우클릭으로 화면 색상 추출 (관리자 모드 전용/테스트용)
+        if (Input.GetMouseButtonDown(1) && _webcamTexture != null && _webcamTexture.isPlaying)
+        {
+            ExtractColorFromMouse();
+        }
+    }
+
+    private void ExtractColorFromMouse()
+    {
+        if (_rawImage == null || _rectTransform == null) return;
+        
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            _rectTransform, Input.mousePosition, null, out Vector2 localPoint);
+
+        Rect rect = _rectTransform.rect;
+        float nx = (localPoint.x - rect.x) / rect.width;
+        float ny = (localPoint.y - rect.y) / rect.height;
+
+        if (nx >= 0f && nx <= 1f && ny >= 0f && ny <= 1f)
+        {
+            // UV 맵핑 역산 (크롭 및 트랜스폼 반영된 실제 웹캠 텍스처 좌표)
+            float trueU = _rawImage.uvRect.x + nx * _rawImage.uvRect.width;
+            float trueV = _rawImage.uvRect.y + ny * _rawImage.uvRect.height;
+
+            int px = Mathf.Clamp(Mathf.FloorToInt(trueU * _webcamTexture.width), 0, _webcamTexture.width - 1);
+            int py = Mathf.Clamp(Mathf.FloorToInt(trueV * _webcamTexture.height), 0, _webcamTexture.height - 1);
+
+            Color pickedColor = _webcamTexture.GetPixel(px, py);
+            string hexColor = "#" + ColorUtility.ToHtmlStringRGB(pickedColor);
+
+            if (PhotoBoothConfigLoader.Instance != null && PhotoBoothConfigLoader.Instance.IsLoaded)
+            {
+                var globalCfg = PhotoBoothConfigLoader.Instance.Config.Global;
+                globalCfg.TargetColor = hexColor;
+
+                PhotoBoothConfigLoader.Instance.SaveConfig();
+                Debug.Log("[ChromaKey] 🎨 색상 추출 완료: " + hexColor + " (저장 완료)");
+            }
+        }
+    }
+
     // ── 파이프라인 단계별 메서드 ──────────────────────────────────────────────
 
     /// <summary>

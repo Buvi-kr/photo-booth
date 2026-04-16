@@ -368,6 +368,10 @@ public class MasterSetupBuilder
         rt.anchoredPosition = pos;
         rt.sizeDelta = size;
 
+        // 기존 레이아웃 구룹(VerticalLayoutGroup 등) 무시 강제
+        var le = obj.AddComponent<LayoutElement>();
+        le.ignoreLayout = true;
+
         Debug.Log($"✅ [Admin] '{objName}' 텍스트 UI 생성");
         return tmp;
     }
@@ -388,6 +392,10 @@ public class MasterSetupBuilder
         rt.anchorMax = new Vector2(0.5f, 0.5f);
         rt.anchoredPosition = pos;
         rt.sizeDelta = size;
+
+        // 기존 레이아웃 그룹 무시
+        var le = toggleObj.AddComponent<LayoutElement>();
+        le.ignoreLayout = true;
 
         Text legacyLabel = toggleObj.GetComponentInChildren<Text>();
         if (legacyLabel != null)
@@ -424,6 +432,10 @@ public class MasterSetupBuilder
             rt.anchorMax = anchor;
             rt.anchoredPosition = pos;
             rt.sizeDelta = size;
+            
+            // 기존 레이아웃 그룹 무시
+            var le = btnObj.AddComponent<LayoutElement>();
+            le.ignoreLayout = true;
 
             Text btnLabel = btnObj.GetComponentInChildren<Text>();
             if (btnLabel != null)
