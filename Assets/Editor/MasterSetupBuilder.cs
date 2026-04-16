@@ -203,8 +203,8 @@ public class MasterSetupBuilder
             }
         }
 
-        // bgThumbnailButtons 자동 연결
-        if ((overlayMgr.bgThumbnailButtons == null || overlayMgr.bgThumbnailButtons.Length == 0) && appState.panelSelectBG != null)
+        // bgThumbnailButtons 자동 연결 (항상 최신화하도록 조건 완화)
+        if (appState.panelSelectBG != null)
         {
             Button[] allButtons = appState.panelSelectBG.GetComponentsInChildren<Button>(true);
             System.Collections.Generic.List<Button> thumbBtns = new System.Collections.Generic.List<Button>();
