@@ -324,12 +324,13 @@ public class MasterSetupBuilder
 
         // ══════════════════════════════════════════════════════════════
         //  좌측 슬라이더 7개 (크로마키 3 + 색상보정 4)
-        //  1920x1080 기준 좌상단 배치
+        //  우측 슬라이더 4개 (웹캠 변환)
         // ══════════════════════════════════════════════════════════════
 
         float startY = -85f;
         float gap = 50f;
         float leftX = 300f;
+        float rightX = leftX + 500f; // 2단 레이아웃 우측
         int idx = 0;
 
         // --- 크로마키 슬라이더 (항상 표시) ---
@@ -374,6 +375,34 @@ public class MasterSetupBuilder
         appState.hueSlider = CreateSlider(adminPanel, "HueSlider",
             "색조", -180f, 180f, 0f,
             new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
+        count++;
+
+        // --- 웹캠 변환 슬라이더 (우측 레이아웃) ---
+        int rightIdx = 3; // 색상 보정 구분선과 높이 맞춤
+        CreateTMP(adminPanel, "TransformSeparator",
+            "── 웹캠 변환 (배경별) ──",
+            14, FontStyle.Normal, new Color(1f, 0.4f, 0.4f), TextAlignmentOptions.TopLeft,
+            new Vector2(0, 1), new Vector2(0, 1),
+            new Vector2(rightX, startY - gap * rightIdx++), new Vector2(300, 25), koreanFont);
+
+        appState.zoomSlider = CreateSlider(adminPanel, "ZoomSlider",
+            "크기 (Zoom)", 0.5f, 3.0f, 1f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
+        appState.moveXSlider = CreateSlider(adminPanel, "MoveXSlider",
+            "수평 이동", -1f, 1f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
+        appState.moveYSlider = CreateSlider(adminPanel, "MoveYSlider",
+            "수직 이동", -1f, 1f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
+        appState.rotationSlider = CreateSlider(adminPanel, "RotationSlider",
+            "회전 (도)", -180f, 180f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
         count++;
 
         // ══════════════════════════════════════════════════════════════
@@ -466,8 +495,9 @@ public class MasterSetupBuilder
         appState.selectVideoPlayer = vp;
         count++;
 
-        // ── 썸네일 버튼 OnClick 연결 ──
+            // ── 썸네일 버튼 OnClick 연결 및 배열 저장 ──
         Button[] allButtons = selectPanel.GetComponentsInChildren<Button>(true);
+        System.Collections.Generic.List<RectTransform> validButtons = new System.Collections.Generic.List<RectTransform>();
         int bgIndex = 0;
         foreach (Button btn in allButtons)
         {
@@ -492,10 +522,46 @@ public class MasterSetupBuilder
             if (rt != null)
             {
                 rt.sizeDelta = new Vector2(rt.sizeDelta.x - 20, rt.sizeDelta.y - 40);
+                validButtons.Add(rt);
             }
 
             Debug.Log($"✅ [SelectBG] '{btn.name}' → 배경 {bgIndex}번 연결 & 크기 조정(X:-20, Y:-40)");
             bgIndex++;
+            count++;
+        }
+
+        appState.bgButtons = validButtons.ToArray();
+
+        // ── 셀렉트 박스 (조이스틱 포커스 커서) 자동 생성 ──
+        Transform existingCursor = selectPanel.transform.Find("JoystickSelectCursor");
+        if (existingCursor != null)
+        {
+            appState.selectCursor = existingCursor.GetComponent<RectTransform>();
+            Debug.Log("✅ [SelectBG] 기존 JoystickSelectCursor 재연결");
+        }
+        else if (validButtons.Count > 0)
+        {
+            GameObject cursorObj = new GameObject("JoystickSelectCursor");
+            cursorObj.transform.SetParent(selectPanel.transform, false);
+            cursorObj.transform.SetAsLastSibling(); // 제일 나중에 그려짐 (맨 앞)
+
+            RectTransform cRT = cursorObj.AddComponent<RectTransform>();
+            cRT.anchorMin = validButtons[0].anchorMin;
+            cRT.anchorMax = validButtons[0].anchorMax;
+            cRT.pivot = validButtons[0].pivot;
+            cRT.sizeDelta = validButtons[0].sizeDelta + new Vector2(30, 30); // 버튼보다 약간 큼
+
+            Image cImg = cursorObj.AddComponent<Image>();
+            cImg.color = new Color(1f, 0.9f, 0.2f, 0.8f); // 노란빛 / 붉은빛 계열 외곽선 연출
+            cImg.raycastTarget = false;
+            
+            // Outline 효과 주입 (단순 외곽선)
+            Outline outline = cursorObj.AddComponent<Outline>();
+            outline.effectColor = new Color(1f, 0.4f, 0f, 1f);
+            outline.effectDistance = new Vector2(10, -10);
+
+            appState.selectCursor = cRT;
+            Debug.Log("✅ [SelectBG] JoystickSelectCursor 자동 생성 및 연결 완료");
             count++;
         }
 

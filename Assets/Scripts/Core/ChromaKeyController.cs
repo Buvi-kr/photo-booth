@@ -298,13 +298,18 @@ public class ChromaKeyController : MonoBehaviour
     }
 
     /// <summary>
-    /// [단계 0] Transform — Zoom / MoveX / MoveY
-    /// uvRect 의 width·height·x·y 를 조절하여 확대·이동 적용
+    /// [단계 0] Transform — Zoom / MoveX / MoveY / Rotation
+    /// uvRect 의 width·height·x·y 를 조절하여 확대·이동 적용. RectTransform 의 Z축 조절하여 회전 적용.
     /// </summary>
     private void ApplyTransform(TransformConfig tr)
     {
-        if (_rawImage == null) return;
-        if (tr == null || tr.IsIdentity) return;
+        if (_rawImage == null || _rectTransform == null) return;
+        
+        if (tr == null || tr.IsIdentity)
+        {
+            _rectTransform.localEulerAngles = Vector3.zero;
+            return;
+        }
 
         Rect uv = _rawImage.uvRect;
 
@@ -317,6 +322,9 @@ public class ChromaKeyController : MonoBehaviour
         float originY = uv.y + (uv.height - scaledH) * 0.5f - tr.MoveY * scaledH;
 
         _rawImage.uvRect = new Rect(originX, originY, scaledW, scaledH);
+
+        // Rotation: RectTransform 의 Z축 회전 적용
+        _rectTransform.localEulerAngles = new Vector3(0f, 0f, tr.Rotation);
     }
 
     /// <summary>

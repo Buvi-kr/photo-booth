@@ -33,6 +33,13 @@ public class AppStateManager : MonoBehaviour
     public Slider contrastSlider;
     public Slider saturationSlider;
     public Slider hueSlider;
+    
+    [Header("관리자 UI - 웹캠 변환")]
+    public Slider zoomSlider;
+    public Slider moveXSlider;
+    public Slider moveYSlider;
+    public Slider rotationSlider;
+
     public Toggle useLocalChromaToggle;
     public TextMeshProUGUI adminStepTitleText;
     public TextMeshProUGUI adminTargetNameText;
@@ -43,6 +50,12 @@ public class AppStateManager : MonoBehaviour
     public GameObject panelSelectBG;
     public GameObject panelCapture;
     public GameObject panelResult;
+
+    [Header("조이스틱 네비게이션 UI")]
+    public RectTransform selectCursor;
+    public RectTransform[] bgButtons;
+    private int _currentJoystickIndex = 0;
+    private float _joystickCooldown = 0f;
 
     // ※ bgSprites, photoBackground 제거 → OverlayBGManager.bgConfigs로 통합
 
@@ -89,6 +102,12 @@ public class AppStateManager : MonoBehaviour
         if (contrastSlider != null) contrastSlider.onValueChanged.AddListener(OnContrastChanged);
         if (saturationSlider != null) saturationSlider.onValueChanged.AddListener(OnSaturationChanged);
         if (hueSlider != null) hueSlider.onValueChanged.AddListener(OnHueChanged);
+        
+        if (zoomSlider != null) zoomSlider.onValueChanged.AddListener(OnZoomChanged);
+        if (moveXSlider != null) moveXSlider.onValueChanged.AddListener(OnMoveXChanged);
+        if (moveYSlider != null) moveYSlider.onValueChanged.AddListener(OnMoveYChanged);
+        if (rotationSlider != null) rotationSlider.onValueChanged.AddListener(OnRotationChanged);
+
         if (useLocalChromaToggle != null) useLocalChromaToggle.onValueChanged.AddListener(OnUseLocalChromaToggled);
     }
 
@@ -112,6 +131,38 @@ public class AppStateManager : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Alpha4) || Input.GetKeyDown(KeyCode.Keypad4)) SelectBackgroundAndGoNext(3);
             if (Input.GetKeyDown(KeyCode.Alpha5) || Input.GetKeyDown(KeyCode.Keypad5)) SelectBackgroundAndGoNext(4);
             if (Input.GetKeyDown(KeyCode.Alpha6) || Input.GetKeyDown(KeyCode.Keypad6)) SelectBackgroundAndGoNext(5);
+
+            // ── 조이스틱 / 방향키 네비게이션 ──
+            if (_joystickCooldown > 0f) _joystickCooldown -= Time.deltaTime;
+            float h = Input.GetAxisRaw("Horizontal");
+
+            if (Mathf.Abs(h) > 0.5f && _joystickCooldown <= 0f)
+            {
+                MoveJoystickCursor(h > 0 ? 1 : -1);
+                _joystickCooldown = 0.3f; // 0.3초 쿨다운
+            }
+            else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D)) MoveJoystickCursor(1);
+            else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A)) MoveJoystickCursor(-1);
+
+            // 조이스틱 버튼 (Fire1, Submit, Enter, Space)
+            if (Input.GetButtonDown("Submit") || Input.GetButtonDown("Jump") || Input.GetKeyDown(KeyCode.Return))
+            {
+                SelectBackgroundAndGoNext(_currentJoystickIndex);
+            }
+        }
+
+        // 셀렉트 커서(붉은 박스) 부드러운 이동 연출
+        if (currentState == AppState.SelectBG && selectCursor != null && bgButtons != null && bgButtons.Length > _currentJoystickIndex)
+        {
+            if (bgButtons[_currentJoystickIndex] != null)
+            {
+                if (!selectCursor.gameObject.activeSelf) selectCursor.gameObject.SetActive(true);
+                selectCursor.position = Vector3.Lerp(selectCursor.position, bgButtons[_currentJoystickIndex].position, Time.deltaTime * 15f);
+            }
+        }
+        else if (selectCursor != null && selectCursor.gameObject.activeSelf)
+        {
+            selectCursor.gameObject.SetActive(false);
         }
 
         if (Input.GetMouseButtonDown(0) || Input.anyKeyDown)
@@ -148,6 +199,11 @@ public class AppStateManager : MonoBehaviour
                 break;
 
             case AppState.SelectBG:
+                _currentJoystickIndex = 0; // 진입 시 항상 첫번째 배경에 포커스
+                if (selectCursor != null && bgButtons != null && bgButtons.Length > 0 && bgButtons[0] != null)
+                {
+                    selectCursor.position = bgButtons[0].position; // 애니메이션 없이 즉각적으로 이동
+                }
                 PlaySelectVideo();
                 break;
         }
@@ -397,8 +453,9 @@ public class AppStateManager : MonoBehaviour
             if (smoothnessSlider != null) smoothnessSlider.value = config.Global.MasterSmoothness;
             if (spillRemovalSlider != null) spillRemovalSlider.value = config.Global.MasterSpillRemoval;
 
-            // Global 페이지에서는 색상보정 비활성
+            // Global 페이지에서는 색상보정 및 웹캠 변환 비활성
             SetColorSlidersVisible(false);
+            SetTransformSlidersVisible(false);
 
             ApplyAdminBackgroundOverlay(-1);
         }
@@ -420,12 +477,19 @@ public class AppStateManager : MonoBehaviour
             if (smoothnessSlider != null) smoothnessSlider.value = bg.Chroma.LocalSmoothness;
             if (spillRemovalSlider != null) spillRemovalSlider.value = bg.Chroma.LocalSpillRemoval;
 
-            // 배경별 색상보정
+            // 배경별 색상보정 및 웹캠 변환 활성
             SetColorSlidersVisible(true);
+            SetTransformSlidersVisible(true);
+            
             if (brightnessSlider != null) brightnessSlider.value = bg.Color.Brightness;
             if (contrastSlider != null) contrastSlider.value = bg.Color.Contrast;
             if (saturationSlider != null) saturationSlider.value = bg.Color.Saturation;
             if (hueSlider != null) hueSlider.value = bg.Color.Hue;
+
+            if (zoomSlider != null) zoomSlider.value = bg.Transform.Zoom;
+            if (moveXSlider != null) moveXSlider.value = bg.Transform.MoveX;
+            if (moveYSlider != null) moveYSlider.value = bg.Transform.MoveY;
+            if (rotationSlider != null) rotationSlider.value = bg.Transform.Rotation;
         }
 
         _isAdminUIUpdating = false;
@@ -487,6 +551,34 @@ public class AppStateManager : MonoBehaviour
         ApplyAdminToPreview();
     }
 
+    private void OnZoomChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.Zoom = v;
+        ApplyAdminToPreview();
+    }
+
+    private void OnMoveXChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.MoveX = v;
+        ApplyAdminToPreview();
+    }
+
+    private void OnMoveYChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.MoveY = v;
+        ApplyAdminToPreview();
+    }
+
+    private void OnRotationChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.Rotation = v;
+        ApplyAdminToPreview();
+    }
+
     private void OnUseLocalChromaToggled(bool b)
     {
         if (_isAdminUIUpdating) return;
@@ -499,10 +591,27 @@ public class AppStateManager : MonoBehaviour
 
     private void SetColorSlidersVisible(bool visible)
     {
-        if (brightnessSlider != null) brightnessSlider.transform.parent.gameObject.SetActive(visible);
-        if (contrastSlider != null) contrastSlider.transform.parent.gameObject.SetActive(visible);
-        if (saturationSlider != null) saturationSlider.transform.parent.gameObject.SetActive(visible);
-        if (hueSlider != null) hueSlider.transform.parent.gameObject.SetActive(visible);
+        if (brightnessSlider != null && brightnessSlider.transform.parent != null) brightnessSlider.transform.parent.gameObject.SetActive(visible);
+        if (contrastSlider != null && contrastSlider.transform.parent != null) contrastSlider.transform.parent.gameObject.SetActive(visible);
+        if (saturationSlider != null && saturationSlider.transform.parent != null) saturationSlider.transform.parent.gameObject.SetActive(visible);
+        if (hueSlider != null && hueSlider.transform.parent != null) hueSlider.transform.parent.gameObject.SetActive(visible);
+    }
+
+    private void SetTransformSlidersVisible(bool visible)
+    {
+        if (zoomSlider != null && zoomSlider.transform.parent != null) zoomSlider.transform.parent.gameObject.SetActive(visible);
+        if (moveXSlider != null && moveXSlider.transform.parent != null) moveXSlider.transform.parent.gameObject.SetActive(visible);
+        if (moveYSlider != null && moveYSlider.transform.parent != null) moveYSlider.transform.parent.gameObject.SetActive(visible);
+        if (rotationSlider != null && rotationSlider.transform.parent != null) rotationSlider.transform.parent.gameObject.SetActive(visible);
+    }
+
+    private void MoveJoystickCursor(int step)
+    {
+        if (bgButtons == null || bgButtons.Length == 0) return;
+        
+        _currentJoystickIndex += step;
+        if (_currentJoystickIndex >= bgButtons.Length) _currentJoystickIndex = 0;
+        else if (_currentJoystickIndex < 0) _currentJoystickIndex = bgButtons.Length - 1;
     }
 
     private void ApplyAdminToPreview()

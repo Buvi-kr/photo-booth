@@ -262,11 +262,16 @@ public class TransformConfig
     [JsonProperty("moveY")]
     public float MoveY { get; set; } = 0.0f;
 
+    /// <summary>회전 각도. 도(degree) 단위. 양수 = 시계 방향. (권장: -180~180)</summary>
+    [JsonProperty("rotation")]
+    public float Rotation { get; set; } = 0.0f;
+
     /// <summary>모든 값이 기본값인지 확인. true 이면 Transform 연산 스킵 가능.</summary>
     [JsonIgnore]
     public bool IsIdentity => Mathf.Approximately(Zoom, 1.0f) &&
                               Mathf.Approximately(MoveX, 0.0f) &&
-                              Mathf.Approximately(MoveY, 0.0f);
+                              Mathf.Approximately(MoveY, 0.0f) &&
+                              Mathf.Approximately(Rotation, 0.0f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

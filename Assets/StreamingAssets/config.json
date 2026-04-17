@@ -1,7 +1,7 @@
-﻿{
+{
   "global": {
-    "targetColor": "#F5F3F5",
-    "masterSensitivity": 0.35,
+    "targetColor": "#83786D",
+    "masterSensitivity": 0.0222597215,
     "masterSmoothness": 0.08,
     "masterSpillRemoval": 0.171718121
   },
@@ -15,32 +15,6 @@
   "backgrounds": [
     {
       "bgName": "1",
-      "crop": {
-        "top": 0,
-        "bottom": 0,
-        "left": 0,
-        "right": 0
-      },
-      "transform": {
-        "zoom": 1.0,
-        "moveX": 0.0,
-        "moveY": 0.0
-      },
-      "color": {
-        "brightness": -0.0306336284,
-        "contrast": 0.99320364,
-        "saturation": 0.999999642,
-        "hue": -2.14518785
-      },
-      "chroma": {
-        "useLocalChroma": false,
-        "localSensitivity": 0.35,
-        "localSmoothness": 0.08,
-        "localSpillRemoval": 0.3402508
-      }
-    },
-    {
-      "bgName": "2",
       "crop": {
         "top": 20,
         "bottom": 10,
@@ -66,7 +40,7 @@
       }
     },
     {
-      "bgName": "3",
+      "bgName": "2",
       "crop": {
         "top": 0,
         "bottom": 0,
@@ -83,6 +57,32 @@
         "contrast": 1.05,
         "saturation": 0.95,
         "hue": -3.0
+      },
+      "chroma": {
+        "useLocalChroma": false,
+        "localSensitivity": 0.35,
+        "localSmoothness": 0.08,
+        "localSpillRemoval": 0.15
+      }
+    },
+    {
+      "bgName": "3",
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "transform": {
+        "zoom": 1.0,
+        "moveX": 0.0,
+        "moveY": 0.0
+      },
+      "color": {
+        "brightness": 0.0,
+        "contrast": 1.0,
+        "saturation": 1.0,
+        "hue": 0.0
       },
       "chroma": {
         "useLocalChroma": false,
@@ -157,16 +157,16 @@
         "moveY": 0.0
       },
       "color": {
-        "brightness": 0.0,
-        "contrast": 1.0,
-        "saturation": 1.0,
-        "hue": 0.0
+        "brightness": -0.0306336284,
+        "contrast": 0.99320364,
+        "saturation": 0.999999642,
+        "hue": -2.14518785
       },
       "chroma": {
         "useLocalChroma": false,
         "localSensitivity": 0.35,
         "localSmoothness": 0.08,
-        "localSpillRemoval": 0.15
+        "localSpillRemoval": 0.3402508
       }
     }
   ]
