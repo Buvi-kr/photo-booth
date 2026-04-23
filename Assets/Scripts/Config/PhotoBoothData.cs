@@ -234,9 +234,17 @@ public class CropConfig
     [JsonProperty("right")]
     public int Right { get; set; } = 0;
 
-    /// <summary>모든 크롭 값이 0인지 확인. true 이면 크롭 연산 스킵 가능.</summary>
+    /// <summary>X축 (좌우) 페이딩 부드러움 정도. 값이 클수록 경계선이 넓게 흐려짐.</summary>
+    [JsonProperty("fadeX")]
+    public int FadeX { get; set; } = 0;
+
+    /// <summary>Y축 (상하) 페이딩 부드러움 정도. 값이 클수록 경계선이 넓게 흐려짐.</summary>
+    [JsonProperty("fadeY")]
+    public int FadeY { get; set; } = 0;
+
+    /// <summary>모든 크롭 값이 0인지 확인. true 이면 마스크 연산 스킵 가능.</summary>
     [JsonIgnore]
-    public bool IsIdentity => Top == 0 && Bottom == 0 && Left == 0 && Right == 0;
+    public bool IsIdentity => Top == 0 && Bottom == 0 && Left == 0 && Right == 0 && FadeX == 0 && FadeY == 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

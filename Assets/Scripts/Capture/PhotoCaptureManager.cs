@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections;
@@ -26,7 +26,6 @@ public class PhotoCaptureManager : MonoBehaviour
     public RawImage webcamDisplay;
 
     private bool isCapturing = false;
-    private Texture2D _lastRawFrame;
 
     private void Start()
     {
@@ -35,7 +34,7 @@ public class PhotoCaptureManager : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Space) && AppStateManager.Instance != null)
+        if (Input.GetKeyDown(KeyCode.Return) && AppStateManager.Instance != null && AppStateManager.Instance.CurrentState == AppState.Capture)
         {
             TakePhoto();
         }
@@ -73,15 +72,6 @@ public class PhotoCaptureManager : MonoBehaviour
 
         yield return new WaitForEndOfFrame();
 
-        // 배경 재합성용 원본 웹캠 프레임 저장
-        if (webcamDisplay != null && webcamDisplay.texture is WebCamTexture camTex)
-        {
-            if (_lastRawFrame != null) Destroy(_lastRawFrame);
-            _lastRawFrame = new Texture2D(camTex.width, camTex.height, TextureFormat.RGB24, false);
-            _lastRawFrame.SetPixels(camTex.GetPixels());
-            _lastRawFrame.Apply();
-        }
-
         Texture2D finalPhoto = SaveScreenshot(out string savedFileName);
 
         yield return StartCoroutine(FlashEffect());
@@ -98,41 +88,6 @@ public class PhotoCaptureManager : MonoBehaviour
         isCapturing = false;
 
         AppStateManager.Instance.ChangeState(AppState.Result);
-    }
-
-    // 배경 변경 후 동일 포즈로 재합성 + QR 새로 생성
-    public IEnumerator RecompositeCapture()
-    {
-        if (_lastRawFrame == null)
-        {
-            Debug.LogWarning("[PhotoCapture] 저장된 원본 프레임이 없습니다. 먼저 촬영하세요.");
-            yield break;
-        }
-
-        Texture originalTexture = webcamDisplay != null ? webcamDisplay.texture : null;
-        if (webcamDisplay != null) webcamDisplay.texture = _lastRawFrame;
-
-        foreach (GameObject ui in uiToHide)
-            if (ui != null) ui.SetActive(false);
-
-        yield return new WaitForEndOfFrame();
-
-        // 새 배경으로 저장 → 새 파일명 받기
-        Texture2D recomposited = SaveScreenshot(out string newFileName);
-
-        if (webcamDisplay != null) webcamDisplay.texture = originalTexture;
-
-        foreach (GameObject ui in uiToHide)
-            if (ui != null) ui.SetActive(true);
-
-        if (resultPreview != null && recomposited != null)
-            resultPreview.texture = recomposited;
-
-        // 새 파일명으로 QR 재생성
-        if (QRServerManager.Instance != null && !string.IsNullOrEmpty(newFileName))
-            QRServerManager.Instance.GenerateQRCodeForFile(newFileName);
-
-        Debug.Log($"[PhotoCapture] 배경 재합성 완료! 파일: {newFileName}");
     }
 
     // PNG → JPG(품질 90)로 변경
@@ -191,6 +146,8 @@ public class PhotoCaptureManager : MonoBehaviour
     private IEnumerator FlashEffect()
     {
         if (flashScreen == null) yield break;
+        flashScreen.gameObject.SetActive(true);
+        flashScreen.transform.SetAsLastSibling(); // 제일 위에 렌더링되도록 보장
         flashScreen.color = new Color(1, 1, 1, 1);
         float duration = 0.5f;
         float elapsed = 0;
@@ -203,5 +160,6 @@ public class PhotoCaptureManager : MonoBehaviour
             yield return null;
         }
         flashScreen.color = new Color(1, 1, 1, 0);
+        flashScreen.gameObject.SetActive(false); // 불필요한 그리기 부하 방지
     }
 }

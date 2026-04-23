@@ -21,6 +21,7 @@ public class AppStateManager : MonoBehaviour
 
     [Header("현재 상태")]
     [SerializeField] private AppState currentState = AppState.Standby;
+    public AppState CurrentState => currentState;
 
     [Header("관리자 UI 연결")]
     public GameObject adminPanel;
@@ -40,6 +41,14 @@ public class AppStateManager : MonoBehaviour
     public Slider moveYSlider;
     public Slider rotationSlider;
 
+    [Header("관리자 UI - 마스크 크롭/페이딩")]
+    public Slider cropTopSlider;
+    public Slider cropBottomSlider;
+    public Slider cropLeftSlider;
+    public Slider cropRightSlider;
+    public Slider fadeXSlider;
+    public Slider fadeYSlider;
+
     public Toggle useLocalChromaToggle;
     public TextMeshProUGUI adminStepTitleText;
     public TextMeshProUGUI adminTargetNameText;
@@ -57,7 +66,10 @@ public class AppStateManager : MonoBehaviour
     private int _currentJoystickIndex = 0;
     private float _joystickCooldown = 0f;
 
-    // ※ bgSprites, photoBackground 제거 → OverlayBGManager.bgConfigs로 통합
+    [Header("결과 화면 네비게이션 UI")]
+    public RectTransform resultCursor;
+    public RectTransform[] resultButtons;
+    private int _currentResultIndex = 0;
 
     [Header("재합성용 참조")]
     public PhotoCaptureManager photoCaptureManager;
@@ -80,7 +92,6 @@ public class AppStateManager : MonoBehaviour
 
     private bool _isTransitioning = false;
     private Coroutine _blinkCoroutine;
-    private bool _isRecompositing = false;
 
     private void Awake()
     {
@@ -109,6 +120,13 @@ public class AppStateManager : MonoBehaviour
         if (rotationSlider != null) rotationSlider.onValueChanged.AddListener(OnRotationChanged);
 
         if (useLocalChromaToggle != null) useLocalChromaToggle.onValueChanged.AddListener(OnUseLocalChromaToggled);
+        
+        if (cropTopSlider != null) cropTopSlider.onValueChanged.AddListener(OnCropTopChanged);
+        if (cropBottomSlider != null) cropBottomSlider.onValueChanged.AddListener(OnCropBottomChanged);
+        if (cropLeftSlider != null) cropLeftSlider.onValueChanged.AddListener(OnCropLeftChanged);
+        if (cropRightSlider != null) cropRightSlider.onValueChanged.AddListener(OnCropRightChanged);
+        if (fadeXSlider != null) fadeXSlider.onValueChanged.AddListener(OnFadeXChanged);
+        if (fadeYSlider != null) fadeYSlider.onValueChanged.AddListener(OnFadeYChanged);
     }
 
     private void Update()
@@ -116,7 +134,13 @@ public class AppStateManager : MonoBehaviour
         if (Input.GetKey(KeyCode.LeftControl) && Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.S))
             ToggleAdminMode();
 
-        if (Input.GetKeyDown(KeyCode.Escape)) ResetToStart();
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            if (currentState == AppState.Result) ChangeState(AppState.SelectBG);
+            else if (currentState == AppState.Capture) ChangeState(AppState.SelectBG);
+            else if (currentState == AppState.SelectBG) ResetToStart();
+            else ResetToStart();
+        }
 
         // 관리자(Calibration) 모드에서는 마우스/키 입력을 상태전환에 사용하지 않음
         // → ChromaKeyController 의 색상 추출이 정상 작동하도록 보호
@@ -135,17 +159,18 @@ public class AppStateManager : MonoBehaviour
             // ── 조이스틱 / 방향키 네비게이션 ──
             if (_joystickCooldown > 0f) _joystickCooldown -= Time.deltaTime;
             float h = Input.GetAxisRaw("Horizontal");
+            float v = Input.GetAxisRaw("Vertical");
 
-            if (Mathf.Abs(h) > 0.5f && _joystickCooldown <= 0f)
+            if ((Mathf.Abs(h) > 0.5f || Mathf.Abs(v) > 0.5f) && _joystickCooldown <= 0f)
             {
-                MoveJoystickCursor(h > 0 ? 1 : -1);
+                MoveJoystickCursor((h > 0 || v < 0) ? 1 : -1);
                 _joystickCooldown = 0.3f; // 0.3초 쿨다운
             }
-            else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D)) MoveJoystickCursor(1);
-            else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A)) MoveJoystickCursor(-1);
+            else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S)) MoveJoystickCursor(1);
+            else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W)) MoveJoystickCursor(-1);
 
-            // 조이스틱 버튼 (Fire1, Submit, Enter, Space)
-            if (Input.GetButtonDown("Submit") || Input.GetButtonDown("Jump") || Input.GetKeyDown(KeyCode.Return))
+            // 조이스틱 버튼 (Fire1, Submit, Enter)
+            if (Input.GetButtonDown("Submit") || Input.GetKeyDown(KeyCode.Return))
             {
                 SelectBackgroundAndGoNext(_currentJoystickIndex);
             }
@@ -157,12 +182,58 @@ public class AppStateManager : MonoBehaviour
             if (bgButtons[_currentJoystickIndex] != null)
             {
                 if (!selectCursor.gameObject.activeSelf) selectCursor.gameObject.SetActive(true);
+                selectCursor.SetAsLastSibling();
+                // 버튼과 물리적 상태를 100% 동일하게 맞춰서 밀림 원천 차단 (테두리 오프셋으로 패딩 해결)
+                selectCursor.anchorMin = bgButtons[_currentJoystickIndex].anchorMin;
+                selectCursor.anchorMax = bgButtons[_currentJoystickIndex].anchorMax;
+                selectCursor.pivot = bgButtons[_currentJoystickIndex].pivot;
                 selectCursor.position = Vector3.Lerp(selectCursor.position, bgButtons[_currentJoystickIndex].position, Time.deltaTime * 15f);
+                selectCursor.sizeDelta = Vector2.Lerp(selectCursor.sizeDelta, bgButtons[_currentJoystickIndex].sizeDelta, Time.deltaTime * 15f);
             }
         }
         else if (selectCursor != null && selectCursor.gameObject.activeSelf)
         {
             selectCursor.gameObject.SetActive(false);
+        }
+
+        // 결과 화면 커서 연출 및 로직
+        if (currentState == AppState.Result)
+        {
+            if (_joystickCooldown > 0f) _joystickCooldown -= Time.deltaTime;
+            float h = Input.GetAxisRaw("Horizontal");
+            float v = Input.GetAxisRaw("Vertical");
+
+            if ((Mathf.Abs(h) > 0.5f || Mathf.Abs(v) > 0.5f) && _joystickCooldown <= 0f)
+            {
+                MoveResultCursor((h > 0 || v < 0) ? 1 : -1);
+                _joystickCooldown = 0.3f;
+            }
+            else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S)) MoveResultCursor(1);
+            else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W)) MoveResultCursor(-1);
+
+            if (Input.GetButtonDown("Submit") || Input.GetKeyDown(KeyCode.Return))
+            {
+                ExecuteResultButton();
+            }
+
+            if (resultCursor != null && resultButtons != null && resultButtons.Length > _currentResultIndex)
+            {
+                if (resultButtons[_currentResultIndex] != null)
+                {
+                    if (!resultCursor.gameObject.activeSelf) resultCursor.gameObject.SetActive(true);
+                    resultCursor.SetAsLastSibling();
+                    // 버튼과 물리적 상태를 100% 동일하게 맞춰서 밀림 원천 차단
+                    resultCursor.anchorMin = resultButtons[_currentResultIndex].anchorMin;
+                    resultCursor.anchorMax = resultButtons[_currentResultIndex].anchorMax;
+                    resultCursor.pivot = resultButtons[_currentResultIndex].pivot;
+                    resultCursor.position = Vector3.Lerp(resultCursor.position, resultButtons[_currentResultIndex].position, Time.deltaTime * 15f);
+                    resultCursor.sizeDelta = Vector2.Lerp(resultCursor.sizeDelta, resultButtons[_currentResultIndex].sizeDelta, Time.deltaTime * 15f);
+                }
+            }
+        }
+        else if (resultCursor != null && resultCursor.gameObject.activeSelf)
+        {
+            resultCursor.gameObject.SetActive(false);
         }
 
         if (Input.GetMouseButtonDown(0) || Input.anyKeyDown)
@@ -205,6 +276,15 @@ public class AppStateManager : MonoBehaviour
                     selectCursor.position = bgButtons[0].position; // 애니메이션 없이 즉각적으로 이동
                 }
                 PlaySelectVideo();
+                break;
+
+            case AppState.Result:
+                _currentResultIndex = 0; // 결과 화면 버튼 포커스 초기화
+                if (resultCursor != null && resultButtons != null && resultButtons.Length > 0 && resultButtons[0] != null)
+                {
+                    resultCursor.position = resultButtons[0].position;
+                }
+                LoadResultBackground();
                 break;
         }
     }
@@ -360,29 +440,29 @@ public class AppStateManager : MonoBehaviour
         }
     }
 
+    private float _lastSelectTime = 0f;
+
+    private bool _isSelecting = false;
+
     // ── 배경 선택 → OverlayBGManager 한 곳에서 모두 처리 ──
     public void SelectBackgroundAndGoNext(int index)
     {
+        if (Time.time - _lastSelectTime < 1.0f || _isSelecting) return; // 연속 클릭 방지
+        _lastSelectTime = Time.time;
+
         if (OverlayBGManager.Instance != null)
             OverlayBGManager.Instance.SetConfig(index);  // bgSprite + overlay + webcam 한번에
 
-        if (_isRecompositing)
-        {
-            _isRecompositing = false;
-            ChangeState(AppState.Processing);
-            StartCoroutine(RecompositeAndReturn());
-        }
-        else ChangeState(AppState.Capture);
+        // 곧바로 화면을 넘기지 않고 선택 효과를 볼 수 있도록 딜레이 처리
+        StartCoroutine(DelayAndGoCapture());
     }
 
-    public void Button_ChangeBGFromResult() { _isRecompositing = true; ChangeState(AppState.SelectBG); }
-
-    private IEnumerator RecompositeAndReturn()
+    private System.Collections.IEnumerator DelayAndGoCapture()
     {
-        yield return null;
-        if (photoCaptureManager != null)
-            yield return StartCoroutine(photoCaptureManager.RecompositeCapture());
-        ChangeState(AppState.Result);
+        _isSelecting = true;
+        yield return new WaitForSeconds(0.8f); // 0.8초 대기 후 촬영 모드로
+        ChangeState(AppState.Capture);
+        _isSelecting = false;
     }
 
     public void Button_RetakePhoto() => ChangeState(AppState.Capture);
@@ -422,6 +502,36 @@ public class AppStateManager : MonoBehaviour
         RefreshAdminUI();
     }
 
+    public void ResetAdminCurrentBackground()
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || PhotoBoothConfigLoader.Instance == null) return;
+        var bg = PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex];
+        
+        // Transform 초기화
+        bg.Transform.Zoom = 1.0f;
+        bg.Transform.MoveX = 0f;
+        bg.Transform.MoveY = 0f;
+        bg.Transform.Rotation = 0f;
+        
+        // Crop / Fade 초기화
+        bg.Crop.Top = 0;
+        bg.Crop.Bottom = 0;
+        bg.Crop.Left = 0;
+        bg.Crop.Right = 0;
+        bg.Crop.FadeX = 0;
+        bg.Crop.FadeY = 0;
+        
+        // Color 보정 초기화
+        bg.Color.Brightness = 0.0f;
+        bg.Color.Contrast = 1.0f;
+        bg.Color.Saturation = 1.0f;
+        bg.Color.Hue = 0f;
+        
+        RefreshAdminUI();
+        ApplyAdminToPreview();
+        Debug.Log($"[Admin] 배경 {adminBgIndex} 번의 모든 세팅(위치/색상)이 초기화되었습니다.");
+    }
+
     public void ApplyAndSaveAdminConfig()
     {
         PhotoBoothConfigLoader.Instance?.SaveConfig();
@@ -453,9 +563,10 @@ public class AppStateManager : MonoBehaviour
             if (smoothnessSlider != null) smoothnessSlider.value = config.Global.MasterSmoothness;
             if (spillRemovalSlider != null) spillRemovalSlider.value = config.Global.MasterSpillRemoval;
 
-            // Global 페이지에서는 색상보정 및 웹캠 변환 비활성
+            // Global 페이지에서는 색상보정, 웹캠 변환, 마스크 비활성
             SetColorSlidersVisible(false);
             SetTransformSlidersVisible(false);
+            SetMaskSlidersVisible(false);
 
             ApplyAdminBackgroundOverlay(-1);
         }
@@ -477,9 +588,10 @@ public class AppStateManager : MonoBehaviour
             if (smoothnessSlider != null) smoothnessSlider.value = bg.Chroma.LocalSmoothness;
             if (spillRemovalSlider != null) spillRemovalSlider.value = bg.Chroma.LocalSpillRemoval;
 
-            // 배경별 색상보정 및 웹캠 변환 활성
+            // 배경별 색상보정, 웹캠 변환, 마스크 활성
             SetColorSlidersVisible(true);
             SetTransformSlidersVisible(true);
+            SetMaskSlidersVisible(true);
             
             if (brightnessSlider != null) brightnessSlider.value = bg.Color.Brightness;
             if (contrastSlider != null) contrastSlider.value = bg.Color.Contrast;
@@ -490,6 +602,13 @@ public class AppStateManager : MonoBehaviour
             if (moveXSlider != null) moveXSlider.value = bg.Transform.MoveX;
             if (moveYSlider != null) moveYSlider.value = bg.Transform.MoveY;
             if (rotationSlider != null) rotationSlider.value = bg.Transform.Rotation;
+            
+            if (cropTopSlider != null) cropTopSlider.value = bg.Crop.Top;
+            if (cropBottomSlider != null) cropBottomSlider.value = bg.Crop.Bottom;
+            if (cropLeftSlider != null) cropLeftSlider.value = bg.Crop.Left;
+            if (cropRightSlider != null) cropRightSlider.value = bg.Crop.Right;
+            if (fadeXSlider != null) fadeXSlider.value = bg.Crop.FadeX;
+            if (fadeYSlider != null) fadeYSlider.value = bg.Crop.FadeY;
         }
 
         _isAdminUIUpdating = false;
@@ -578,6 +697,48 @@ public class AppStateManager : MonoBehaviour
         PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.Rotation = v;
         ApplyAdminToPreview();
     }
+    
+    private void OnCropTopChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.Top = Mathf.RoundToInt(v);
+        ApplyAdminToPreview();
+    }
+
+    private void OnCropBottomChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.Bottom = Mathf.RoundToInt(v);
+        ApplyAdminToPreview();
+    }
+
+    private void OnCropLeftChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.Left = Mathf.RoundToInt(v);
+        ApplyAdminToPreview();
+    }
+
+    private void OnCropRightChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.Right = Mathf.RoundToInt(v);
+        ApplyAdminToPreview();
+    }
+
+    private void OnFadeXChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.FadeX = Mathf.RoundToInt(v);
+        ApplyAdminToPreview();
+    }
+
+    private void OnFadeYChanged(float v)
+    {
+        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
+        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.FadeY = Mathf.RoundToInt(v);
+        ApplyAdminToPreview();
+    }
 
     private void OnUseLocalChromaToggled(bool b)
     {
@@ -605,6 +766,16 @@ public class AppStateManager : MonoBehaviour
         if (rotationSlider != null && rotationSlider.transform.parent != null) rotationSlider.transform.parent.gameObject.SetActive(visible);
     }
 
+    private void SetMaskSlidersVisible(bool visible)
+    {
+        if (cropTopSlider != null && cropTopSlider.transform.parent != null) cropTopSlider.transform.parent.gameObject.SetActive(visible);
+        if (cropBottomSlider != null && cropBottomSlider.transform.parent != null) cropBottomSlider.transform.parent.gameObject.SetActive(visible);
+        if (cropLeftSlider != null && cropLeftSlider.transform.parent != null) cropLeftSlider.transform.parent.gameObject.SetActive(visible);
+        if (cropRightSlider != null && cropRightSlider.transform.parent != null) cropRightSlider.transform.parent.gameObject.SetActive(visible);
+        if (fadeXSlider != null && fadeXSlider.transform.parent != null) fadeXSlider.transform.parent.gameObject.SetActive(visible);
+        if (fadeYSlider != null && fadeYSlider.transform.parent != null) fadeYSlider.transform.parent.gameObject.SetActive(visible);
+    }
+
     private void MoveJoystickCursor(int step)
     {
         if (bgButtons == null || bgButtons.Length == 0) return;
@@ -612,6 +783,74 @@ public class AppStateManager : MonoBehaviour
         _currentJoystickIndex += step;
         if (_currentJoystickIndex >= bgButtons.Length) _currentJoystickIndex = 0;
         else if (_currentJoystickIndex < 0) _currentJoystickIndex = bgButtons.Length - 1;
+    }
+
+    private void MoveResultCursor(int step)
+    {
+        if (resultButtons == null || resultButtons.Length == 0) return;
+        
+        _currentResultIndex += step;
+        if (_currentResultIndex >= resultButtons.Length) _currentResultIndex = 0;
+        else if (_currentResultIndex < 0) _currentResultIndex = resultButtons.Length - 1;
+    }
+
+    private void ExecuteResultButton()
+    {
+        if (resultButtons == null || resultButtons.Length == 0) return;
+        if (resultButtons[_currentResultIndex] != null)
+        {
+            Button btn = resultButtons[_currentResultIndex].GetComponent<Button>();
+            if (btn != null) btn.onClick.Invoke();
+        }
+    }
+
+    private RawImage _resultBgImg;
+    private Texture2D _cachedResultBgTex;
+
+    private void LoadResultBackground()
+    {
+        if (panelResult == null) return;
+        if (_resultBgImg == null)
+        {
+            Transform existingBg = panelResult.transform.Find("Result_DynamicBG");
+            if (existingBg != null) 
+            {
+                _resultBgImg = existingBg.GetComponent<RawImage>();
+            }
+            else
+            {
+                GameObject bgObj = new GameObject("Result_DynamicBG");
+                bgObj.transform.SetParent(panelResult.transform, false);
+                bgObj.transform.SetAsFirstSibling();
+                _resultBgImg = bgObj.AddComponent<RawImage>();
+                RectTransform rt = _resultBgImg.rectTransform;
+                rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+                rt.sizeDelta = Vector2.zero; rt.anchoredPosition = Vector2.zero;
+            }
+        }
+
+        if (_cachedResultBgTex == null)
+        {
+            string jpgPath = Path.Combine(Application.streamingAssetsPath, "result_background.jpg");
+            string pngPath = Path.Combine(Application.streamingAssetsPath, "result_background.png");
+            string finalPath = File.Exists(jpgPath) ? jpgPath : (File.Exists(pngPath) ? pngPath : null);
+
+            if (finalPath != null)
+            {
+                byte[] bytes = File.ReadAllBytes(finalPath);
+                _cachedResultBgTex = new Texture2D(2, 2);
+                _cachedResultBgTex.LoadImage(bytes);
+            }
+            else
+            {
+                Debug.LogWarning("⚠️ result_background.jpg 또는 .png를 StreamingAssets 폴더에서 찾을 수 없습니다.");
+            }
+        }
+
+        if (_cachedResultBgTex != null && _resultBgImg.texture != _cachedResultBgTex)
+        {
+            _resultBgImg.texture = _cachedResultBgTex;
+        }
     }
 
     private void ApplyAdminToPreview()

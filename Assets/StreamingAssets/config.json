@@ -1,6 +1,6 @@
-{
+﻿{
   "global": {
-    "targetColor": "#83786D",
+    "targetColor": "#F5F3F5",
     "masterSensitivity": 0.0222597215,
     "masterSmoothness": 0.08,
     "masterSpillRemoval": 0.171718121
@@ -8,33 +8,36 @@
   "camera": {
     "useDefaultDevice": true,
     "deviceName": "",
-    "requestedWidth": 3840,
-    "requestedHeight": 2160,
+    "requestedWidth": 1920,
+    "requestedHeight": 1080,
     "requestedFPS": 30
   },
   "backgrounds": [
     {
       "bgName": "1",
       "crop": {
-        "top": 20,
-        "bottom": 10,
+        "top": 0,
+        "bottom": 0,
         "left": 0,
-        "right": 0
+        "right": 0,
+        "fadeX": 0,
+        "fadeY": 0
       },
       "transform": {
-        "zoom": 1.05,
+        "zoom": 1.0,
         "moveX": 0.0,
-        "moveY": -0.02
+        "moveY": 0.0,
+        "rotation": 0.0
       },
       "color": {
-        "brightness": 0.05,
-        "contrast": 1.1,
-        "saturation": 1.15,
-        "hue": 5.0
+        "brightness": 0.0,
+        "contrast": 1.0,
+        "saturation": 1.0,
+        "hue": 0.0
       },
       "chroma": {
         "useLocalChroma": true,
-        "localSensitivity": 0.42,
+        "localSensitivity": 0.5849488,
         "localSmoothness": 0.12,
         "localSpillRemoval": 0.2
       }
@@ -45,12 +48,15 @@
         "top": 0,
         "bottom": 0,
         "left": 15,
-        "right": 15
+        "right": 15,
+        "fadeX": 0,
+        "fadeY": 0
       },
       "transform": {
         "zoom": 1.02,
         "moveX": 0.0,
-        "moveY": 0.0
+        "moveY": 0.0,
+        "rotation": 0.0
       },
       "color": {
         "brightness": -0.05,
@@ -68,15 +74,18 @@
     {
       "bgName": "3",
       "crop": {
-        "top": 0,
-        "bottom": 0,
+        "top": 177,
+        "bottom": 253,
         "left": 0,
-        "right": 0
+        "right": 0,
+        "fadeX": 0,
+        "fadeY": 0
       },
       "transform": {
-        "zoom": 1.0,
-        "moveX": 0.0,
-        "moveY": 0.0
+        "zoom": 0.852620244,
+        "moveX": 3.57627869E-07,
+        "moveY": 0.0,
+        "rotation": -89.13523
       },
       "color": {
         "brightness": 0.0,
@@ -85,8 +94,8 @@
         "hue": 0.0
       },
       "chroma": {
-        "useLocalChroma": false,
-        "localSensitivity": 0.35,
+        "useLocalChroma": true,
+        "localSensitivity": 0.391266167,
         "localSmoothness": 0.08,
         "localSpillRemoval": 0.15
       }
@@ -97,12 +106,15 @@
         "top": 0,
         "bottom": 0,
         "left": 0,
-        "right": 0
+        "right": 0,
+        "fadeX": 0,
+        "fadeY": 0
       },
       "transform": {
         "zoom": 1.0,
         "moveX": 0.0,
-        "moveY": 0.0
+        "moveY": 0.0,
+        "rotation": 0.0
       },
       "color": {
         "brightness": 0.0,
@@ -123,12 +135,15 @@
         "top": 0,
         "bottom": 0,
         "left": 0,
-        "right": 0
+        "right": 0,
+        "fadeX": 0,
+        "fadeY": 0
       },
       "transform": {
         "zoom": 1.0,
         "moveX": 0.0,
-        "moveY": 0.0
+        "moveY": 0.0,
+        "rotation": 0.0
       },
       "color": {
         "brightness": 0.0,
@@ -138,8 +153,8 @@
       },
       "chroma": {
         "useLocalChroma": false,
-        "localSensitivity": 0.35,
-        "localSmoothness": 0.08,
+        "localSensitivity": 0.462008357,
+        "localSmoothness": 0.162532628,
         "localSpillRemoval": 0.15
       }
     },
@@ -149,12 +164,15 @@
         "top": 0,
         "bottom": 0,
         "left": 0,
-        "right": 0
+        "right": 0,
+        "fadeX": 0,
+        "fadeY": 0
       },
       "transform": {
         "zoom": 1.0,
         "moveX": 0.0,
-        "moveY": 0.0
+        "moveY": 0.0,
+        "rotation": 0.0
       },
       "color": {
         "brightness": -0.0306336284,

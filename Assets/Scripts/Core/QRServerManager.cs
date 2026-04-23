@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -54,11 +54,38 @@ public class QRServerManager : MonoBehaviour
     private void StartLocalWebServer()
     {
         httpListener = new HttpListener();
-        httpListener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        httpListener.Start();
+        bool started = false;
 
-        UnityEngine.Debug.Log($"[Web Server] 내부 서버가 포트 {port}에서 켜졌습니다.");
-        Task.Run(() => ListenForRequests());
+        for (int i = 0; i < 10; i++)
+        {
+            try
+            {
+                httpListener.Prefixes.Clear();
+                httpListener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                httpListener.Start();
+                started = true;
+                break;
+            }
+            catch (HttpListenerException)
+            {
+                port++; // 포트가 사용중이면 다음 포트 시도
+            }
+            catch (System.Exception ex)
+            {
+                UnityEngine.Debug.LogError($"[Web Server] 알 수 없는 오류: {ex.Message}");
+                break;
+            }
+        }
+
+        if (started)
+        {
+            UnityEngine.Debug.Log($"[Web Server] 내부 서버가 포트 {port}에서 켜졌습니다.");
+            Task.Run(() => ListenForRequests());
+        }
+        else
+        {
+            UnityEngine.Debug.LogError("[Web Server] 포트 할당에 실패했습니다. 이전 백그라운드 프로세스가 남아있는지 확인하세요.");
+        }
     }
 
     private async Task ListenForRequests()
@@ -245,17 +272,40 @@ public class QRServerManager : MonoBehaviour
     // ──────────────────────────────────────────
     private void OnApplicationQuit()
     {
-        if (httpListener != null && httpListener.IsListening)
+        if (httpListener != null)
         {
-            httpListener.Stop();
-            httpListener.Close();
+            try
+            {
+                if (httpListener.IsListening)
+                    httpListener.Stop();
+                httpListener.Close();
+            }
+            catch (Exception) {}
+            finally
+            {
+                httpListener = null;
+            }
         }
 
-        if (cloudflaredProcess != null && !cloudflaredProcess.HasExited)
+        if (cloudflaredProcess != null)
         {
-            cloudflaredProcess.Kill();
-            cloudflaredProcess.Dispose();
+            try
+            {
+                if (!cloudflaredProcess.HasExited)
+                    cloudflaredProcess.Kill();
+            }
+            catch (Exception) {}
+            finally
+            {
+                cloudflaredProcess.Dispose();
+                cloudflaredProcess = null;
+            }
             UnityEngine.Debug.Log("[Tunnel] Cloudflare 터널 안전하게 종료.");
         }
+    }
+
+    private void OnDestroy()
+    {
+        OnApplicationQuit();
     }
 }

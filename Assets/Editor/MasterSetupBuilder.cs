@@ -46,6 +46,12 @@ public class MasterSetupBuilder
         // ── 5단계: 배경 선택 패널 버튼 연결 ──
         fixCount += SetupSelectBGPanel(appState);
 
+        // ── 5-2단계: 결과 패널 버튼 연결 ──
+        fixCount += SetupResultPanel(appState);
+
+        // ── 5-3단계: 스탠바이 패널 텍스트 세팅 ──
+        fixCount += SetupStandbyPanel(appState);
+
         // ── 6단계: 건강 체크 (Validation) ──
         RunValidation(appState);
 
@@ -90,35 +96,51 @@ public class MasterSetupBuilder
             return 0;
         }
 
-        // ★ 중복 체크: 같은 오브젝트에 여러 개 붙어있는지 확인
-        ChromaKeyController[] controllers = wcObj.GetComponents<ChromaKeyController>();
-
-        if (controllers.Length > 1)
+        // ★ 마스크 컨테이너 구성 (RectMask2D 지원)
+        Transform parent = wcObj.transform.parent;
+        GameObject maskObj = null;
+        
+        if (parent != null && parent.name == "WebCamMaskContainer")
         {
-            Debug.LogWarning($"⚠️ [ChromaKey] '{wcObj.name}'에 ChromaKeyController가 {controllers.Length}개 있습니다! " +
-                             "셰이더 없는 중복 컴포넌트를 제거합니다...");
-
-            // 셰이더가 있는 것만 유지, 나머지 마킹
-            for (int i = controllers.Length - 1; i >= 1; i--)
-            {
-                // 뒤에서부터 삭제 (첫 번째는 무조건 유지)
-                Undo.DestroyObjectImmediate(controllers[i]);
-                Debug.Log($"✅ [ChromaKey] 중복 컴포넌트 #{i} 제거 완료");
-            }
-
-            EditorUtility.SetDirty(wcObj);
-            return 1;
+            maskObj = parent.gameObject;
+        }
+        else
+        {
+            maskObj = new GameObject("WebCamMaskContainer");
+            Undo.RegisterCreatedObjectUndo(maskObj, "Create Mask Container");
+            maskObj.transform.SetParent(parent, false);
+            maskObj.transform.SetSiblingIndex(wcObj.transform.GetSiblingIndex());
+            
+            RectTransform maskRT = maskObj.AddComponent<RectTransform>();
+            RectTransform wcRT = wcObj.GetComponent<RectTransform>();
+            
+            // 컨테이너는 기존 WebCamDisplay 위치/크기를 그대로 계승
+            maskRT.anchorMin = wcRT.anchorMin;
+            maskRT.anchorMax = wcRT.anchorMax;
+            maskRT.pivot = wcRT.pivot;
+            maskRT.anchoredPosition = wcRT.anchoredPosition;
+            maskRT.sizeDelta = wcRT.sizeDelta;
+            
+            wcObj.transform.SetParent(maskObj.transform, false);
+            wcRT.anchorMin = Vector2.zero;
+            wcRT.anchorMax = Vector2.one;
+            wcRT.sizeDelta = Vector2.zero;
+            wcRT.anchoredPosition = Vector2.zero;
         }
 
-        if (controllers.Length == 1)
+        if (maskObj.GetComponent<RectMask2D>() == null)
         {
-            Debug.Log($"✅ [ChromaKey] '{wcObj.name}'에 ChromaKeyController 정상 존재");
-            return 0;
+            Undo.AddComponent<RectMask2D>(maskObj);
+            Debug.Log("✅ [ChromaKey] MaskContainer에 RectMask2D 추가 완료");
         }
 
-        // ★ 없으면 추가
-        Undo.AddComponent<ChromaKeyController>(wcObj);
-        Debug.Log($"✅ [ChromaKey] '{wcObj.name}'에 ChromaKeyController 추가 완료");
+        // ★ 컴포넌트 체크 및 추가
+        if (wcObj.GetComponent<ChromaKeyController>() == null)
+        {
+            Undo.AddComponent<ChromaKeyController>(wcObj);
+            Debug.Log($"✅ [ChromaKey] '{wcObj.name}'에 ChromaKeyController 추가 완료");
+        }
+
         return 1;
     }
 
@@ -405,6 +427,43 @@ public class MasterSetupBuilder
             new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
         count++;
 
+        // --- 마스크 (크롭 및 페이딩) ---
+        CreateTMP(adminPanel, "MaskSeparator",
+            "── 마스크 (크롭 및 페이딩) ──",
+            14, FontStyle.Normal, new Color(1f, 0.4f, 0.8f), TextAlignmentOptions.TopLeft,
+            new Vector2(0, 1), new Vector2(0, 1),
+            new Vector2(rightX, startY - gap * rightIdx++), new Vector2(300, 25), koreanFont);
+
+        appState.cropTopSlider = CreateSlider(adminPanel, "CropTopSlider",
+            "위쪽 자르기", 0f, 1000f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
+        appState.cropBottomSlider = CreateSlider(adminPanel, "CropBottomSlider",
+            "아래쪽 자르기", 0f, 1000f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
+        appState.cropLeftSlider = CreateSlider(adminPanel, "CropLeftSlider",
+            "왼쪽 자르기", 0f, 1000f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
+        appState.cropRightSlider = CreateSlider(adminPanel, "CropRightSlider",
+            "오른쪽 자르기", 0f, 1000f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
+        appState.fadeXSlider = CreateSlider(adminPanel, "FadeXSlider",
+            "좌우 페이딩", 0f, 500f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
+        appState.fadeYSlider = CreateSlider(adminPanel, "FadeYSlider",
+            "상하 페이딩", 0f, 500f, 0f,
+            new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
+        count++;
+
         // ══════════════════════════════════════════════════════════════
         //  상단 메뉴: 스포이드 버튼 / 탐색기 열기 버튼
         // ══════════════════════════════════════════════════════════════
@@ -422,11 +481,17 @@ public class MasterSetupBuilder
         count++;
 
         // ══════════════════════════════════════════════════════════════
-        //  로컬 크로마 토글 (슬라이더들 아래)
+        //  로컬 크로마 토글 및 초기화 (슬라이더들 아래)
         // ══════════════════════════════════════════════════════════════
         appState.useLocalChromaToggle = CreateToggle(adminPanel, "UseLocalChromaToggle",
             "Local Override",
             new Vector2(0, 1), new Vector2(leftX + 10, startY - gap * idx++), new Vector2(250, 30));
+        count++;
+        
+        CreateButton(adminPanel, "ResetLocalBtn", "🔃 0으로 초기화",
+            new Color(0.8f, 0.3f, 0.3f), Color.white,
+            new Vector2(0.5f, 0f), new Vector2(0, 100), new Vector2(200, 40),
+            appState, "ResetAdminCurrentBackground");
         count++;
 
         // ══════════════════════════════════════════════════════════════
@@ -517,11 +582,20 @@ public class MasterSetupBuilder
                 as UnityEngine.Events.UnityAction<int>;
             UnityEditor.Events.UnityEventTools.AddIntPersistentListener(btn.onClick, action, bgIndex);
 
-            // ── 버튼 크기 조정 (배경 네모 뚫림 방지: 가로-20, 세로-40)
+            // ── 버튼 크기 조정 (배경 네모 뚫림 방지: 가로-20, 세로-40 -> 추가로 테두리 짤림 해결을 위해 아래에서 20 축소)
+            // 즉 y에서 총 -60을 하고, 위쪽 기준을 유지하기 위해 Y좌표를 +10 올리면 맨 아래 공간 20px가 잘림.
             RectTransform rt = btn.GetComponent<RectTransform>();
             if (rt != null)
             {
-                rt.sizeDelta = new Vector2(rt.sizeDelta.x - 20, rt.sizeDelta.y - 40);
+                rt.sizeDelta = new Vector2(rt.sizeDelta.x - 20, rt.sizeDelta.y - 60);
+                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, rt.anchoredPosition.y + 10);
+                
+                // 아랫줄(4, 5, 6번째 즉 bgIndex 3, 4, 5)을 강제로 위로 5px 추가로 올림
+                if (bgIndex >= 3)
+                {
+                    rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, rt.anchoredPosition.y + 5);
+                }
+
                 validButtons.Add(rt);
             }
 
@@ -536,37 +610,272 @@ public class MasterSetupBuilder
         Transform existingCursor = selectPanel.transform.Find("JoystickSelectCursor");
         if (existingCursor != null)
         {
-            appState.selectCursor = existingCursor.GetComponent<RectTransform>();
-            Debug.Log("✅ [SelectBG] 기존 JoystickSelectCursor 재연결");
+            Undo.DestroyObjectImmediate(existingCursor.gameObject);
+            Debug.Log("✅ [SelectBG] 기존 JoystickSelectCursor 삭제 완료");
         }
-        else if (validButtons.Count > 0)
+        
+        if (validButtons.Count > 0)
         {
             GameObject cursorObj = new GameObject("JoystickSelectCursor");
             cursorObj.transform.SetParent(selectPanel.transform, false);
             cursorObj.transform.SetAsLastSibling(); // 제일 나중에 그려짐 (맨 앞)
 
             RectTransform cRT = cursorObj.AddComponent<RectTransform>();
+            // 버튼과 물리적으로 100% 동일한 공간(스펙)을 가져야 어긋나지 않음
             cRT.anchorMin = validButtons[0].anchorMin;
             cRT.anchorMax = validButtons[0].anchorMax;
             cRT.pivot = validButtons[0].pivot;
-            cRT.sizeDelta = validButtons[0].sizeDelta + new Vector2(30, 30); // 버튼보다 약간 큼
+            cRT.sizeDelta = validButtons[0].sizeDelta; // 버튼 사이즈와 동일하게 맞춤 (오프셋 팽창 X)
 
             Image cImg = cursorObj.AddComponent<Image>();
-            cImg.color = new Color(1f, 0.9f, 0.2f, 0.8f); // 노란빛 / 붉은빛 계열 외곽선 연출
+            cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게 속을 비움
             cImg.raycastTarget = false;
             
-            // Outline 효과 주입 (단순 외곽선)
-            Outline outline = cursorObj.AddComponent<Outline>();
-            outline.effectColor = new Color(1f, 0.4f, 0f, 1f);
-            outline.effectDistance = new Vector2(10, -10);
+            // 사면 테두리(Image)를 생성할 때 중심으로부터 바깥쪽(Outward)으로 각각 15px씩 밀어내어 패딩(+30)을 생성!
+            CreateBorder(cursorObj, "TopBorder", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, 10), new Vector2(0, 15));
+            CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 10), new Vector2(0, -15));
+            CreateBorder(cursorObj, "LeftBorder", new Vector2(0, 0), new Vector2(0, 1), new Vector2(0.0f, 0.5f), new Vector2(10, 0), new Vector2(-15, 0));
+            CreateBorder(cursorObj, "RightBorder", new Vector2(1, 0), new Vector2(1, 1), new Vector2(1.0f, 0.5f), new Vector2(10, 0), new Vector2(15, 0));
 
             appState.selectCursor = cRT;
             Debug.Log("✅ [SelectBG] JoystickSelectCursor 자동 생성 및 연결 완료");
             count++;
         }
 
+        // ── 배경 선택 안내 반투명 패널 및 자막 텍스트 추가 ──
+        Transform existingPanel = selectPanel.transform.Find("SelectBG_Subtitle_Panel");
+        if (existingPanel != null) Undo.DestroyObjectImmediate(existingPanel.gameObject);
+        
+        Transform existingSubtitle = selectPanel.transform.Find("SelectBG_Subtitle");
+        if (existingSubtitle != null) Undo.DestroyObjectImmediate(existingSubtitle.gameObject);
+
+        GameObject subtitlePanelObj = new GameObject("SelectBG_Subtitle_Panel");
+        subtitlePanelObj.transform.SetParent(selectPanel.transform, false);
+        RectTransform panelRt = subtitlePanelObj.AddComponent<RectTransform>();
+        panelRt.anchorMin = new Vector2(0.5f, 0f);
+        panelRt.anchorMax = new Vector2(0.5f, 0f);
+        panelRt.anchoredPosition = new Vector2(0, 180);
+        panelRt.sizeDelta = new Vector2(1920, 150); // 화면 전체를 가로지르는 반투명 띠
+        Image panelImg = subtitlePanelObj.AddComponent<Image>();
+        panelImg.color = new Color(0, 0, 0, 0.7f); // 70% 불투명도의 검은색
+        panelImg.raycastTarget = false;
+
+        TMP_FontAsset koreanFont = FindKoreanFont();
+        Color subtitleColor;
+        ColorUtility.TryParseHtmlString("#00FFFF", out subtitleColor); // 사이버펑크 네온 청록색
+        var subtitleTmp = CreateTMP(selectPanel, "SelectBG_Subtitle", "배경을 선택해주세요",
+            90, FontStyle.Bold, subtitleColor, TextAlignmentOptions.Center,
+            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 180), new Vector2(1200, 150), koreanFont);
+            
+        if (subtitleTmp.fontSharedMaterial != null)
+        {
+            Material themeMat = new Material(subtitleTmp.fontSharedMaterial);
+            themeMat.DisableKeyword("OUTLINE_ON"); // 지저분했던 외곽선 완전 제거
+            
+            // 글자가 묻히지 않게 은은하고 부드러운 그림자만 살짝 추가
+            themeMat.EnableKeyword("UNDERLAY_ON");
+            themeMat.SetFloat("_UnderlayOffsetX", 0.5f);
+            themeMat.SetFloat("_UnderlayOffsetY", -0.5f);
+            themeMat.SetFloat("_UnderlayDilate", 0f);
+            themeMat.SetFloat("_UnderlaySoftness", 0.5f);
+            themeMat.SetColor("_UnderlayColor", new Color(0, 0, 0, 0.8f));
+            
+            subtitleTmp.fontSharedMaterial = themeMat;
+        }
+        
+        Debug.Log("✅ [SelectBG] 배경 선택 안내 자막(Subtitle) 네온 테마 적용 완료");
+        count++;
+
         Debug.Log($"✅ [SelectBG] 배경 선택 패널 세팅 완료 (버튼 {bgIndex}개, VP 1개)");
         return count;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  3.5단계: 결과 패널 버튼 및 커서 생성 (자동화)
+    // ═══════════════════════════════════════════════════════════════════════════
+    private static int SetupResultPanel(AppStateManager appState)
+    {
+        GameObject resultPanel = appState.panelResult;
+        if (resultPanel == null)
+        {
+            Debug.LogWarning("⚠️ [Result] panelResult가 할당되지 않았습니다. 결과 패널 세팅을 건너뜁니다.");
+            return 0;
+        }
+
+        Undo.RegisterFullObjectHierarchyUndo(resultPanel, "Setup Result Panel");
+        int count = 0;
+
+        Button[] allButtons = resultPanel.GetComponentsInChildren<Button>(true);
+        System.Collections.Generic.List<RectTransform> validButtons = new System.Collections.Generic.List<RectTransform>();
+
+        RectTransform completeBtn = null;
+        RectTransform retakeBtn = null;
+
+        foreach (Button btn in allButtons)
+        {
+            string lowerName = btn.name.ToLower();
+
+            // 배경변경 버튼 강제 제거
+            if (lowerName.Contains("changebg") || lowerName.Contains("배경") || lowerName.Contains("change"))
+            {
+                btn.gameObject.SetActive(false);
+                EditorUtility.SetDirty(btn.gameObject);
+                Debug.Log($"✅ [Result] 배경 변경 버튼('{btn.name}')을 비활성화했습니다.");
+                continue;
+            }
+
+            // 홈/뒤로가기/불필요 파츠 패스
+            if (lowerName.Contains("back") || lowerName.Contains("home") || lowerName.Contains("close") ||
+                lowerName.Contains("bg") || lowerName.Contains("thumb") || lowerName.Contains("background") ||
+                lowerName.Contains("admin"))
+                continue;
+
+            RectTransform rt = btn.GetComponent<RectTransform>();
+            if (rt != null)
+            {
+                validButtons.Add(rt);
+
+                // GameObject 이름뿐만 아니라 버튼 안에 들어있는 Text 글자까지 싹 다 뽑아서 식별률을 100%로 올림
+                string btnText = "";
+                var txt = btn.GetComponentInChildren<Text>(true);
+                if (txt != null) btnText += txt.text;
+                var tmp = btn.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+                if (tmp != null) btnText += tmp.text;
+                
+                string combinedSearch = lowerName + btnText.ToLower();
+
+                if (combinedSearch.Contains("처음") || combinedSearch.Contains("완료") || combinedSearch.Contains("complete") || combinedSearch.Contains("submit"))
+                    completeBtn = rt;
+                else if (combinedSearch.Contains("다시") || combinedSearch.Contains("retake") || combinedSearch.Contains("retry"))
+                    retakeBtn = rt;
+            }
+            count++;
+        }
+
+        // --- 디자인 강제 교정 (크기와 정렬 맞추기) ---
+        if (completeBtn != null && retakeBtn != null)
+        {
+            Undo.RecordObject(completeBtn, "Resize Complete Button");
+            Undo.RecordObject(retakeBtn, "Resize Retake Button");
+            
+            // 높이 100으로 둘 다 고정! 넓이는 '처음으로' 버튼 기준!
+            Vector2 newSize = new Vector2(completeBtn.sizeDelta.x, 100f);
+            completeBtn.sizeDelta = newSize;
+            retakeBtn.sizeDelta = newSize;
+            
+            // 여러 번 스크립트를 실행해도 간격이 계속 변하는 걸 막기 위해(멱등성),
+            // 다시찍기 버튼의 기준점(Anchor, Pivot)을 '처음으로'의 기준점과 완전 똑같이 복제합니다.
+            retakeBtn.anchorMin = completeBtn.anchorMin;
+            retakeBtn.anchorMax = completeBtn.anchorMax;
+            retakeBtn.pivot = completeBtn.pivot;
+            
+            // [처음으로] 버튼의 Y좌표에서 정확히 120px 위쪽으로 띄워서 배치 (버튼간 20px 여백)
+            retakeBtn.anchoredPosition = new Vector2(completeBtn.anchoredPosition.x, completeBtn.anchoredPosition.y + 120f);
+            
+            EditorUtility.SetDirty(completeBtn);
+            EditorUtility.SetDirty(retakeBtn);
+            Debug.Log("✅ [Result] 버튼 높이를 100으로 맞추고, 두 버튼간 간격을 20px로 예쁘게 쌓아(Stack) QR 침범을 해결했습니다.");
+        }
+        else
+        {
+            Debug.LogWarning($"⚠️ [Result] 버튼 식별 실패: 다시찍기={retakeBtn!=null}, 처음으로={completeBtn!=null}");
+        }
+
+        // --- 폰트 억제 기능(Auto Size) 해제 및 강제적용 ---
+        System.Action<RectTransform> ApplyLargeBoldText = (btnRt) => {
+            if (btnRt == null) return;
+            
+            Text txt = btnRt.GetComponentInChildren<Text>(true);
+            if (txt != null) {
+                Undo.RecordObject(txt, "Change Font");
+                txt.resizeTextForBestFit = false; // 사이즈 무시되는 현상 방지
+                txt.fontSize = 28;
+                txt.fontStyle = FontStyle.Bold;
+                EditorUtility.SetDirty(txt);
+            }
+            var tmp = btnRt.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+            if (tmp != null) {
+                Undo.RecordObject(tmp, "Change Font");
+                tmp.enableAutoSizing = false; // 사이즈 무시되는 현상 방지
+                tmp.fontSize = 28;
+                tmp.fontStyle = TMPro.FontStyles.Bold;
+                EditorUtility.SetDirty(tmp);
+            }
+        };
+
+        ApplyLargeBoldText(completeBtn);
+        ApplyLargeBoldText(retakeBtn);
+
+        appState.resultButtons = validButtons.ToArray();
+
+        Transform existingCursor = resultPanel.transform.Find("ResultSelectCursor");
+        if (existingCursor != null)
+        {
+            Undo.DestroyObjectImmediate(existingCursor.gameObject);
+            Debug.Log("✅ [Result] 기존 ResultSelectCursor 삭제 완료");
+        }
+        
+        if (validButtons.Count > 0)
+        {
+            GameObject cursorObj = new GameObject("ResultSelectCursor");
+            cursorObj.transform.SetParent(resultPanel.transform, false);
+            cursorObj.transform.SetAsLastSibling();
+
+            RectTransform cRT = cursorObj.AddComponent<RectTransform>();
+            // 버튼과 100% 동일하게 겹쳐지도록 생성
+            cRT.anchorMin = validButtons[0].anchorMin;
+            cRT.anchorMax = validButtons[0].anchorMax;
+            cRT.pivot = validButtons[0].pivot;
+            cRT.sizeDelta = validButtons[0].sizeDelta; // 팽창 금지
+
+            Image cImg = cursorObj.AddComponent<Image>();
+            cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게
+            cImg.raycastTarget = false;
+
+            // 사면 테두리(Image) 생성 + 바깥쪽 15px 오프셋 적용
+            CreateBorder(cursorObj, "TopBorder", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, 10), new Vector2(0, 15));
+            CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 10), new Vector2(0, -15));
+            CreateBorder(cursorObj, "LeftBorder", new Vector2(0, 0), new Vector2(0, 1), new Vector2(0.0f, 0.5f), new Vector2(10, 0), new Vector2(-15, 0));
+            CreateBorder(cursorObj, "RightBorder", new Vector2(1, 0), new Vector2(1, 1), new Vector2(1.0f, 0.5f), new Vector2(10, 0), new Vector2(15, 0));
+
+            appState.resultCursor = cRT;
+            Debug.Log("✅ [Result] ResultSelectCursor 자동 생성 및 연결 완료");
+            count++;
+        }
+
+        return count;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  3.6단계: 스탠바이 패널 세팅 (글자 색상 동기화)
+    // ═══════════════════════════════════════════════════════════════════════════
+    private static int SetupStandbyPanel(AppStateManager appState)
+    {
+        if (appState.blinkText != null)
+        {
+            Undo.RecordObject(appState.blinkText, "Update Blink Text Color");
+            ColorUtility.TryParseHtmlString("#00FFFF", out Color c);
+            appState.blinkText.color = c;
+            
+            // 기존에 하드코딩된 스타일(아웃라인 등)을 통일감 있게 정리
+            if (appState.blinkText.fontSharedMaterial != null)
+            {
+                Material themeMat = new Material(appState.blinkText.fontSharedMaterial);
+                themeMat.DisableKeyword("OUTLINE_ON");
+                themeMat.EnableKeyword("UNDERLAY_ON");
+                themeMat.SetFloat("_UnderlayOffsetX", 0.5f);
+                themeMat.SetFloat("_UnderlayOffsetY", -0.5f);
+                themeMat.SetFloat("_UnderlayDilate", 0f);
+                themeMat.SetFloat("_UnderlaySoftness", 0.5f);
+                themeMat.SetColor("_UnderlayColor", new Color(0, 0, 0, 0.8f));
+                appState.blinkText.fontSharedMaterial = themeMat;
+            }
+            
+            EditorUtility.SetDirty(appState.blinkText);
+            Debug.Log("✅ [Standby] 대기 화면 깜빡임 텍스트에 네온 테마(#00FFFF) 색상 적용 완료");
+            return 1;
+        }
+        return 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -830,6 +1139,23 @@ public class MasterSetupBuilder
         {
             Debug.LogError($"❌ AppStateManager에 '{methodName}' 메서드가 없습니다!");
         }
+    }
+
+    private static void CreateBorder(GameObject parent, string name, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 sizeDelta, Vector2 anchoredPosOffset)
+    {
+        GameObject borderObj = new GameObject(name);
+        borderObj.transform.SetParent(parent.transform, false);
+        
+        RectTransform rt = borderObj.AddComponent<RectTransform>();
+        rt.anchorMin = anchorMin;
+        rt.anchorMax = anchorMax;
+        rt.pivot = pivot;
+        rt.sizeDelta = sizeDelta;
+        rt.anchoredPosition = anchoredPosOffset;
+        
+        Image img = borderObj.AddComponent<Image>();
+        img.color = new Color(1f, 0f, 0f, 1f); // 빨간 테두리 색상
+        img.raycastTarget = false;
     }
 
     private static void CheckFile(string basePath, string fileName, ref int warnCount)

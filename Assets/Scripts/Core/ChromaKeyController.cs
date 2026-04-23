@@ -30,6 +30,8 @@ public class ChromaKeyController : MonoBehaviour
     // ── 내부 컴포넌트 ─────────────────────────────────────────────────────────
     private RawImage      _rawImage;
     private RectTransform _rectTransform;
+    private RectMask2D    _rectMask2D;
+    private RectTransform _parentRect;
     private Material      _chromaMaterial;
     private WebCamTexture _webcamTexture;
     private bool          _isInitialized = false;
@@ -64,6 +66,8 @@ public class ChromaKeyController : MonoBehaviour
         
         _rawImage      = GetComponent<RawImage>();
         _rectTransform = GetComponent<RectTransform>();
+        _rectMask2D    = GetComponentInParent<RectMask2D>();
+        if (_rectMask2D != null) _parentRect = _rectMask2D.GetComponent<RectTransform>();
 
         InitMaterial();
         StartWebcam();
@@ -263,38 +267,20 @@ public class ChromaKeyController : MonoBehaviour
     /// </summary>
     private void ApplyTrueCrop(CropConfig crop)
     {
-        if (_rawImage == null || _rectTransform == null) return;
+        if (_rawImage == null || _rectTransform == null || _rectMask2D == null || _parentRect == null) return;
 
-        if (crop == null || crop.IsIdentity)
-        {
-            // 크롭 없음 — 원본 그대로
-            _rawImage.uvRect = new Rect(0f, 0f, 1f, 1f);
-            return;
-        }
+        // [Fixed Logic] RectMask2D.padding 을 사용하여 실제 '패딩' 처럼 작동하게 합니다.
+        // 컨테이너 크기는 유지하고 내부 마스크만 좁혀서 자르기 효과를 냅니다.
+        _parentRect.offsetMin = Vector2.zero;
+        _parentRect.offsetMax = Vector2.zero;
+        
+        _rectMask2D.padding = new Vector4(crop.Left, crop.Bottom, crop.Right, crop.Top);
 
-        // 웹캠이 시작됐으면 실제 해상도, 아니면 요청 해상도 사용
-        int w = (_webcamTexture != null && _webcamTexture.width  > 4) ? _webcamTexture.width  : requestedWidth;
-        int h = (_webcamTexture != null && _webcamTexture.height > 4) ? _webcamTexture.height : requestedHeight;
+        // 페이딩 (부드러운 테두리) 적용
+        _rectMask2D.softness = new Vector2Int(crop.FadeX, crop.FadeY);
 
-        _camWidth  = w;
-        _camHeight = h;
-
-        // Pixel → 정규화 (0~1)
-        float u0 = (float)crop.Left   / w;
-        float v0 = (float)crop.Bottom / h;
-        float u1 = 1f - (float)crop.Right / w;
-        float v1 = 1f - (float)crop.Top   / h;
-
-        float uvW = Mathf.Max(u1 - u0, 0.001f);
-        float uvH = Mathf.Max(v1 - v0, 0.001f);
-
-        // ─ uvRect 동기화 ─────────────────────────────────────────────────────
-        _rawImage.uvRect = new Rect(u0, v0, uvW, uvH);
-
-        // ─ sizeDelta 1:1 동기화 (찌그러짐 차단) ──────────────────────────────
-        // 원래 크기에서 크롭 비율만큼 줄인다
-        Vector2 originalSize = _rectTransform.sizeDelta;
-        _rectTransform.sizeDelta = new Vector2(originalSize.x * uvW, originalSize.y * uvH);
+        // uvRect는 기본값(0,0,1,1)으로 초기화 (Transform 단계에서 다시 계산)
+        _rawImage.uvRect = new Rect(0, 0, 1, 1);
     }
 
     /// <summary>
@@ -305,26 +291,20 @@ public class ChromaKeyController : MonoBehaviour
     {
         if (_rawImage == null || _rectTransform == null) return;
         
-        if (tr == null || tr.IsIdentity)
-        {
-            _rectTransform.localEulerAngles = Vector3.zero;
-            return;
-        }
+        // [New Logic] 물리적인 이동 및 확대 적용 (자연스럽게 마스크에 의해 잘림)
+        // Zoom: localScale 로 확대
+        float s = Mathf.Max(tr.Zoom, 0.01f);
+        _rectTransform.localScale = new Vector3(s, s, 1f);
 
-        Rect uv = _rawImage.uvRect;
+        // MoveX/Y: anchoredPosition 이동 (1920x1080 기준 픽셀 단위로 환산하거나, 비율 그대로 사용)
+        // 여기서는 직관적으로 픽셀 단위(화면 너비 대비 비율)로 환산하여 적용
+        _rectTransform.anchoredPosition = new Vector2(tr.MoveX * 1000f, tr.MoveY * 1000f);
 
-        // Zoom: uvRect 크기를 Zoom 으로 나누면 확대 효과
-        float scaledW = uv.width  / Mathf.Max(tr.Zoom, 0.01f);
-        float scaledH = uv.height / Mathf.Max(tr.Zoom, 0.01f);
-
-        // MoveX/Y: uv 오프셋 이동 (양수 = 오른쪽/위쪽)
-        float originX = uv.x + (uv.width  - scaledW) * 0.5f - tr.MoveX * scaledW;
-        float originY = uv.y + (uv.height - scaledH) * 0.5f - tr.MoveY * scaledH;
-
-        _rawImage.uvRect = new Rect(originX, originY, scaledW, scaledH);
-
-        // Rotation: RectTransform 의 Z축 회전 적용
+        // Rotation: 기존방식 유지
         _rectTransform.localEulerAngles = new Vector3(0f, 0f, tr.Rotation);
+        
+        // uvRect 는 건드리지 않음 (0,0,1,1) -> 바둑판 현상 방지
+        _rawImage.uvRect = new Rect(0, 0, 1, 1);
     }
 
     /// <summary>
