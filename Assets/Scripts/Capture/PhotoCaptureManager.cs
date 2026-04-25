@@ -182,9 +182,27 @@ public class PhotoCaptureManager : MonoBehaviour
             if (Mathf.Abs(angle) > 0.01f)
             {
                 // Unity UI는 Z 오일러 반시계가 양수 → 셰이더도 동일 부호
-                float rad = -angle * Mathf.Deg2Rad; // UV 회전은 부호 반전
+                float rad = -angle * Mathf.Deg2Rad;
                 captureMat.SetFloat("_CaptureRotation", rad);
             }
+
+            // ── Crop → _CropRect / _CropFade (UV 정규화) ─────────────────
+            // RectMask2D.padding (L,B,R,T) = canvas 픽셀
+            // → UV 정규화: leftUV = L/cW, bottomUV = B/cH, rightEnd = 1-R/cW, topEnd = 1-T/cH
+            // RectMask2D.softness (px) → UV 페이드 폭
+            Vector4 pad  = chromaCtrl.CropPadding;
+            Vector2 fade = chromaCtrl.CropFade;
+
+            float leftUV   =       pad.x / Mathf.Max(cW, 1f);
+            float bottomUV =       pad.y / Mathf.Max(cH, 1f);
+            float rightUV  = 1f - (pad.z / Mathf.Max(cW, 1f));
+            float topUV    = 1f - (pad.w / Mathf.Max(cH, 1f));
+            float fadeXUV  = fade.x / Mathf.Max(cW, 1f);
+            float fadeYUV  = fade.y / Mathf.Max(cH, 1f);
+
+            captureMat.SetVector("_CropRect", new Vector4(leftUV, bottomUV, rightUV, topUV));
+            captureMat.SetVector("_CropFade", new Vector4(
+                Mathf.Max(fadeXUV, 0.001f), Mathf.Max(fadeYUV, 0.001f), 0f, 0f));
         }
 
         // ── RenderTexture 생성 ───────────────────────────────────────────
@@ -227,25 +245,14 @@ public class PhotoCaptureManager : MonoBehaviour
 
         // ── RT → Texture2D 변환 (크롭 적용) ─────────────────────────────
         // RectMask2D.padding(L,B,R,T)을 픽셀로 변환하여 ReadPixels 영역 결정
-        Vector4 pad = chromaCtrl.CropPadding; // (Left, Bottom, Right, Top) canvas px
-        // padding은 canvas px 단위 → 캡처 해상도로 스케일
-        float scaleToCapture = rt != null ? (float)w / (rt.parent?.GetComponent<RectTransform>()?.rect.width ?? w) : 1f;
-        int cropL = Mathf.RoundToInt(pad.x * scaleToCapture);
-        int cropB = Mathf.RoundToInt(pad.y * scaleToCapture);
-        int cropR = Mathf.RoundToInt(pad.z * scaleToCapture);
-        int cropT = Mathf.RoundToInt(pad.w * scaleToCapture);
-        int readX = Mathf.Clamp(cropL, 0, w - 1);
-        int readY = Mathf.Clamp(cropB, 0, h - 1);
-        int readW = Mathf.Clamp(w - cropL - cropR, 1, w);
-        int readH = Mathf.Clamp(h - cropB - cropT, 1, h);
-
+        // ── RT → Texture2D 변환 (항상 원본 해상도 1920×1080) ────────────
+        // 크롭은 셰이더 _CropRect 알파 마스크로 처리하므로 ReadPixels는 전체 영역 고정
         RenderTexture prevActive = RenderTexture.active;
         RenderTexture.active = rtFinal;
-        Texture2D result = new Texture2D(readW, readH, TextureFormat.RGB24, false);
-        result.ReadPixels(new Rect(readX, readY, readW, readH), 0, 0);
+        Texture2D result = new Texture2D(w, h, TextureFormat.RGB24, false);
+        result.ReadPixels(new Rect(0, 0, w, h), 0, 0);
         result.Apply();
         RenderTexture.active = prevActive;
-        Debug.Log($"[PhotoCapture] 크롭 적용: pad=({cropL},{cropB},{cropR},{cropT}) → {readW}x{readH}");
 
         // ── 저장 ─────────────────────────────────────────────────────────
         string folderPath = Path.Combine(Application.dataPath, saveFolderName);

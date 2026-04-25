@@ -53,6 +53,10 @@ public class ChromaKeyController : MonoBehaviour
     public RectTransform WebcamRectTransform => _rectTransform;
     /// <summary>RectMask2D Padding (크롭 정보 캡처용)</summary>
     public Vector4 CropPadding => _rectMask2D != null ? _rectMask2D.padding : Vector4.zero;
+    /// <summary>RectMask2D Softness (크롭 페이드 캡처용)</summary>
+    public Vector2 CropFade    => _rectMask2D != null
+        ? new Vector2(_rectMask2D.softness.x, _rectMask2D.softness.y)
+        : Vector2.zero;
 
     // ── 셰이더 프로퍼티 ID 캐시 (GetPropertyID 반복 호출 회피) ──────────────
     private static readonly int ID_TargetColor  = Shader.PropertyToID("_TargetColor");

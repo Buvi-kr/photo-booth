@@ -38,6 +38,12 @@ Shader "PhotoBooth/ChromaKey"
         _Hue            ("Hue (degrees)",    Range(-180, 180)) = 0.0
         _CaptureRotation("Capture Rotation (rad)", Float)      = 0.0
 
+        // ── 쳨치 크롭 (UV 기준): 기본값 = 전체 표시 (잘림 없음) ─────────────────────────────
+        // (left_uv, bottom_uv, right_uv_end, top_uv_end)  기본=-0.1~1.1 (no-crop)
+        _CropRect       ("Capture Crop Rect",  Vector)         = (-0.1, -0.1, 1.1, 1.1)
+        // (fadeX_uv, fadeY_uv)  경계 페이드 폭
+        _CropFade       ("Capture Crop Fade",  Vector)         = (0.001, 0.001, 0, 0)
+
         // ── UI 스텐실 (Unity UI 표준) ────────────────────────────────────────
         _StencilComp    ("Stencil Comparison", Float) = 8
         _Stencil        ("Stencil ID",         Float) = 0
@@ -104,6 +110,7 @@ Shader "PhotoBooth/ChromaKey"
                 fixed4 color       : COLOR;
                 float2 texcoord    : TEXCOORD0;
                 float4 worldPos    : TEXCOORD1;
+                float2 screenUV    : TEXCOORD2; // raw 바르는 UV (crop 마스크용, TRANSFORM_TEX 미적용)
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -123,7 +130,9 @@ Shader "PhotoBooth/ChromaKey"
             float   _Contrast;
             float   _Saturation;
             float   _Hue;
-            float   _CaptureRotation; // 0 = UI 실시간, non-zero = 캡처 시 UV 회전 보정
+            float   _CaptureRotation;
+            float4  _CropRect;  // (leftUV, bottomUV, rightUV_end, topUV_end) 컴구로 = no-crop
+            float4  _CropFade;  // (fadeX_uv, fadeY_uv, 0, 0)
 
             float4  _ClipRect;
             bool    _UseClipRect;
@@ -177,6 +186,7 @@ Shader "PhotoBooth/ChromaKey"
                 OUT.worldPos = v.vertex;
                 OUT.vertex   = UnityObjectToClipPos(OUT.worldPos);
                 OUT.texcoord = TRANSFORM_TEX(v.texcoord, _MainTex);
+                OUT.screenUV = v.texcoord; // TRANSFORM_TEX 전의 원본 UV → 쳨치 컨킬링용
                 OUT.color    = v.color;
                 return OUT;
             }
@@ -262,6 +272,21 @@ Shader "PhotoBooth/ChromaKey"
 
                 // Gaussian 가중 평균
                 float alpha = alpha0 * 0.4026 + (alpha1 + alpha2 + alpha3 + alpha4) * 0.1493;
+
+                // ==============================================================
+                //  [단계 1c] 캡처 크롭 알파 마스크
+                //  screenUV (TRANSFORM_TEX 미적용, 0-1 화면 좌표)를 기준으로
+                //  _CropRect 외부를 alpha=0, 경계를 smoothstep으로 페이드
+                //  기본값 _CropRect=(-0.1,-0.1,1.1,1.1) → 전 영역 통과 (실시간 뷰 영향 없음)
+                //  각 방향별: smoothstep(0, fade, UV_from_edge) - UV_from_edge<0이면 0
+                // ==============================================================
+                float2 cropFadeSafe = max(_CropFade.xy, 0.001);
+                float cropMask =
+                    smoothstep(0.0, cropFadeSafe.x, IN.screenUV.x - _CropRect.x) *  // Left
+                    smoothstep(0.0, cropFadeSafe.x, _CropRect.z   - IN.screenUV.x) * // Right
+                    smoothstep(0.0, cropFadeSafe.y, IN.screenUV.y - _CropRect.y) *  // Bottom
+                    smoothstep(0.0, cropFadeSafe.y, _CropRect.w   - IN.screenUV.y); // Top
+                alpha *= saturate(cropMask);
 
                 // ==============================================================
                 //  [단계 2] Branch B — Spill Removal (RGB Path)
