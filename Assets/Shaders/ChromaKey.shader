@@ -215,16 +215,40 @@ Shader "PhotoBooth/ChromaKey"
                 float  chromaDist = length(chromaDiff);
 
                 // ==============================================================
-                //  fwidth() 기반 적응형 엣지 AA
-                //  픽셀당 chromaDist 변화율을 측정하여 경계 픽셀에서 자동으로
-                //  smoothstep 폭을 넓혀줌 → 계단현상 원천 차단
-                //  - 수직/수평 경계: fw ≈ 0 (최소 전환)
-                //  - 45° 대각선 경계: fw ≈ √2 * (수직) (자동 확대)
+                //  [단계 1b] 알파 멀티탭 블러 (fwidth 대신)
+                //  이웃 4곳의 알파를 raw 1-샘플로 독립 계산 후 Gaussian 평균
+                //  ─ 진짜 윤곽선: 이웃이 0과 1을 교차 → 평균 = 부드러운 전환
+                //  ─ 4:2:2 블록 경계: 색상 노이즈가 알파에 주는 영향을 평균이 상쇄
+                //  중심=0.4026(5-tap PreBlur 결과), 이웃 4개=raw 1-샘플
+                //  가중치 합: 0.4026 + 4×0.1493 ≈ 1.0
                 // ==============================================================
-                float fw = fwidth(chromaDist);
-                float edgeLow  = _Sensitivity + _EdgeChoke - fw;
-                float edgeHigh = _Sensitivity + _EdgeChoke + max(_Smoothness, fw * 2.0);
-                float alpha = smoothstep(edgeLow, edgeHigh, chromaDist);
+                float edgeLow  = _Sensitivity + _EdgeChoke;
+                float edgeHigh = _Sensitivity + _EdgeChoke + _Smoothness;
+                float alpha0   = smoothstep(edgeLow, edgeHigh, chromaDist);
+
+                // 1텍셀 고정 오프셋 (PreBlur 스케일과 무관)
+                float2 ao = _MainTex_TexelSize.xy;
+
+                // ± X 이웃
+                float3 raw1  = tex2D(_MainTex, IN.texcoord + float2( ao.x, 0)).rgb;
+                float3 cd1   = (raw1 - keyColor) - (dot(raw1, float3(0.2126,0.7152,0.0722)) - lumKey) * float3(0.2126,0.7152,0.0722) * (1.0 - _LumaWeight);
+                float alpha1 = smoothstep(edgeLow, edgeHigh, length(cd1));
+
+                float3 raw2  = tex2D(_MainTex, IN.texcoord + float2(-ao.x, 0)).rgb;
+                float3 cd2   = (raw2 - keyColor) - (dot(raw2, float3(0.2126,0.7152,0.0722)) - lumKey) * float3(0.2126,0.7152,0.0722) * (1.0 - _LumaWeight);
+                float alpha2 = smoothstep(edgeLow, edgeHigh, length(cd2));
+
+                // ± Y 이웃
+                float3 raw3  = tex2D(_MainTex, IN.texcoord + float2(0,  ao.y)).rgb;
+                float3 cd3   = (raw3 - keyColor) - (dot(raw3, float3(0.2126,0.7152,0.0722)) - lumKey) * float3(0.2126,0.7152,0.0722) * (1.0 - _LumaWeight);
+                float alpha3 = smoothstep(edgeLow, edgeHigh, length(cd3));
+
+                float3 raw4  = tex2D(_MainTex, IN.texcoord + float2(0, -ao.y)).rgb;
+                float3 cd4   = (raw4 - keyColor) - (dot(raw4, float3(0.2126,0.7152,0.0722)) - lumKey) * float3(0.2126,0.7152,0.0722) * (1.0 - _LumaWeight);
+                float alpha4 = smoothstep(edgeLow, edgeHigh, length(cd4));
+
+                // Gaussian 가중 평균
+                float alpha = alpha0 * 0.4026 + (alpha1 + alpha2 + alpha3 + alpha4) * 0.1493;
 
                 // ==============================================================
                 //  [단계 2] Branch B — Spill Removal (RGB Path)
