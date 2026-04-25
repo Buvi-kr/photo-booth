@@ -159,8 +159,13 @@ public class PhotoCaptureManager : MonoBehaviour
         else
             Graphics.Blit(Texture2D.blackTexture, rtBg); // 배경 없으면 검정
 
-        // ── Pass 2: 웹캠 → ChromaKey 셰이더 → rtChroma (RGBA) ─────────
-        Graphics.Blit(webcamTex, rtChroma, chromaMat);
+        // ── Pass 2: 웹캠 → ChromaKey 셰이더 → rtChroma (RGBA, 2x SSAA) ──
+        // 2x 초과샘플링으로 렌더링 후 1080p로 다운샘플 → 경계선 AA 향상
+        RenderTexture rtChromaSSAA = RenderTexture.GetTemporary(w * 2, h * 2, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        rtChromaSSAA.filterMode = FilterMode.Bilinear;
+        Graphics.Blit(webcamTex, rtChromaSSAA, chromaMat);   // 2x 해상도로 크로마키 연산
+        Graphics.Blit(rtChromaSSAA, rtChroma);                // 1x로 다운샘플 (bilinear AA)
+        RenderTexture.ReleaseTemporary(rtChromaSSAA);
 
         // ── Pass 3: 배경 위에 크로마 결과 Alpha-Blend 합성 ─────────────
         Graphics.Blit(rtBg, rtFinal);                               // 배경 복사

@@ -80,7 +80,7 @@ Shader "PhotoBooth/ChromaKey"
             HLSLPROGRAM
             #pragma vertex   vert
             #pragma fragment frag
-            #pragma target 2.0
+            #pragma target 3.0
 
             #pragma multi_compile __ UNITY_UI_CLIP_RECT
             #pragma multi_compile __ UNITY_UI_ALPHACLIP
@@ -214,11 +214,17 @@ Shader "PhotoBooth/ChromaKey"
                 float3 chromaDiff = diff - (lumTex - lumKey) * float3(0.2126, 0.7152, 0.0722) * (1.0 - _LumaWeight);
                 float  chromaDist = length(chromaDiff);
 
-                float alpha = smoothstep(
-                    _Sensitivity + _EdgeChoke,
-                    _Sensitivity + _Smoothness + _EdgeChoke,
-                    chromaDist
-                );
+                // ==============================================================
+                //  fwidth() 기반 적응형 엣지 AA
+                //  픽셀당 chromaDist 변화율을 측정하여 경계 픽셀에서 자동으로
+                //  smoothstep 폭을 넓혀줌 → 계단현상 원천 차단
+                //  - 수직/수평 경계: fw ≈ 0 (최소 전환)
+                //  - 45° 대각선 경계: fw ≈ √2 * (수직) (자동 확대)
+                // ==============================================================
+                float fw = fwidth(chromaDist);
+                float edgeLow  = _Sensitivity + _EdgeChoke - fw;
+                float edgeHigh = _Sensitivity + _EdgeChoke + max(_Smoothness, fw * 2.0);
+                float alpha = smoothstep(edgeLow, edgeHigh, chromaDist);
 
                 // ==============================================================
                 //  [단계 2] Branch B — Spill Removal (RGB Path)
