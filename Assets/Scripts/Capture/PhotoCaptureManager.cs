@@ -141,13 +141,21 @@ public class PhotoCaptureManager : MonoBehaviour
             return FallbackScreenshot(out fileName);
         }
 
+        // ── 캡처 전용 머티리얼 복제 ──────────────────────────────────────
+        // chromaMat에는 RectMask2D가 설정한 UNITY_UI_CLIP_RECT 키워드가 활성화된 상태.
+        // Graphics.Blit 시 worldPos 좌표계가 UI와 달라 클립렉트가 잘못 적용 → 알파 파괴.
+        // 캡처 전용 복제본에서 마스크 키워드를 모두 끄고 블릿한다.
+        Material captureMat = new Material(chromaMat);
+        captureMat.DisableKeyword("UNITY_UI_CLIP_RECT");
+        captureMat.DisableKeyword("UNITY_UI_ALPHACLIP");
+
         // ── RenderTexture 생성 ───────────────────────────────────────────
         // RT_A: 배경 (RGB)
         // RT_B: 크로마키 결과 (RGBA — 인물 알파 포함)
         // RT_C: 최종 합성 (RGB)
-        RenderTexture rtBg    = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        RenderTexture rtBg     = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
         RenderTexture rtChroma = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
-        RenderTexture rtFinal = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        RenderTexture rtFinal  = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
 
         rtBg.filterMode     = FilterMode.Bilinear;
         rtChroma.filterMode = FilterMode.Bilinear;
@@ -157,19 +165,23 @@ public class PhotoCaptureManager : MonoBehaviour
         if (bgTex != null)
             Graphics.Blit(bgTex, rtBg);
         else
-            Graphics.Blit(Texture2D.blackTexture, rtBg); // 배경 없으면 검정
+            Graphics.Blit(Texture2D.blackTexture, rtBg);
 
         // ── Pass 2: 웹캠 → ChromaKey 셰이더 → rtChroma (RGBA, 2x SSAA) ──
         // 2x 초과샘플링으로 렌더링 후 1080p로 다운샘플 → 경계선 AA 향상
+        // captureMat: UI 클립키워드 비활성화된 복제본 사용
         RenderTexture rtChromaSSAA = RenderTexture.GetTemporary(w * 2, h * 2, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
         rtChromaSSAA.filterMode = FilterMode.Bilinear;
-        Graphics.Blit(webcamTex, rtChromaSSAA, chromaMat);   // 2x 해상도로 크로마키 연산
-        Graphics.Blit(rtChromaSSAA, rtChroma);                // 1x로 다운샘플 (bilinear AA)
+        Graphics.Blit(webcamTex, rtChromaSSAA, captureMat);   // 2x 해상도로 크로마키 연산
+        Graphics.Blit(rtChromaSSAA, rtChroma);                 // 1x로 다운샘플 (bilinear AA)
         RenderTexture.ReleaseTemporary(rtChromaSSAA);
 
+        // 캡처 전용 머티리얼 즉시 해제
+        Object.Destroy(captureMat);
+
         // ── Pass 3: 배경 위에 크로마 결과 Alpha-Blend 합성 ─────────────
-        Graphics.Blit(rtBg, rtFinal);                               // 배경 복사
-        Graphics.Blit(rtChroma, rtFinal, GetAlphaBlendMat());       // 크로마키 알파 블렌드
+        Graphics.Blit(rtBg, rtFinal);
+        Graphics.Blit(rtChroma, rtFinal, GetAlphaBlendMat());
 
         // ── Pass 4: 전경(프레임) 합성 ────────────────────────────────────
         if (fgTex != null)

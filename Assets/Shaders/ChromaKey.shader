@@ -226,8 +226,8 @@ Shader "PhotoBooth/ChromaKey"
                 float edgeHigh = _Sensitivity + _EdgeChoke + _Smoothness;
                 float alpha0   = smoothstep(edgeLow, edgeHigh, chromaDist);
 
-                // 1텍셀 고정 오프셋 (PreBlur 스케일과 무관)
-                float2 ao = _MainTex_TexelSize.xy;
+                // 2텍셀 고정 오프셋: 4:2:2 크로마 블록(가로 2px) 경계를 확실히 넘김
+                float2 ao = _MainTex_TexelSize.xy * 2.0;
 
                 // ± X 이웃
                 float3 raw1  = tex2D(_MainTex, IN.texcoord + float2( ao.x, 0)).rgb;
