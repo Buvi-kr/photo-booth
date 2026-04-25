@@ -650,9 +650,10 @@ public class MasterSetupBuilder
             RectTransform rt = btn.GetComponent<RectTransform>();
             if (rt != null)
             {
-                rt.sizeDelta = new Vector2(rt.sizeDelta.x - 20, rt.sizeDelta.y - 60);
-                // 배경 선택 버튼 위치를 20px 더 위로 올림 (+10 -> +30)
-                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, rt.anchoredPosition.y + 30);
+                // 배경 선택 버튼 크기를 아래에서 20px 자르고 (-60 -> -80), 
+                // 그만큼 전체적으로 위로 올림 (+10 -> +40)
+                rt.sizeDelta = new Vector2(rt.sizeDelta.x - 20, rt.sizeDelta.y - 80);
+                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, rt.anchoredPosition.y + 40);
                 
                 // 아랫줄(4, 5, 6번째 즉 bgIndex 3, 4, 5)을 강제로 위로 5px 추가로 올림
                 if (bgIndex >= 3)
