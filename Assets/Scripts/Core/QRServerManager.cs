@@ -204,6 +204,23 @@ public class QRServerManager : MonoBehaviour
             return;
         }
 
+        // ── 잔존 cloudflared 프로세스 강제 종료 (이전 실행 충돌 방지) ──
+        try
+        {
+            var existing = System.Diagnostics.Process.GetProcessesByName("cloudflared");
+            foreach (var p in existing)
+            {
+                try { p.Kill(); p.WaitForExit(1000); } catch { }
+                p.Dispose();
+            }
+            if (existing.Length > 0)
+                UnityEngine.Debug.Log($"[Tunnel] 잔존 cloudflared 프로세스 {existing.Length}개 강제 종료 완료.");
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning("[Tunnel] 잔존 프로세스 종료 중 오류: " + ex.Message);
+        }
+
         cloudflaredProcess = new Process();
         cloudflaredProcess.StartInfo.FileName = cloudflaredPath;
         cloudflaredProcess.StartInfo.Arguments = $"tunnel --url http://127.0.0.1:{port} --http-host-header 127.0.0.1";

@@ -122,6 +122,11 @@ public class OverlayBGManager : MonoBehaviour
         return loader?.Config?.GetByIndex(_currentIndex);
     }
 
+    /// <summary>현재 로드된 배경 텍스처 (합성 캡처용)</summary>
+    public Texture GetBackgroundTexture() => _loadedTexture;
+    /// <summary>현재 로드된 전경(프레임) 텍스처 (합성 캡처용)</summary>
+    public Texture GetForegroundTexture() => _loadedFrontTexture;
+
     // ── 내부 구현 ─────────────────────────────────────────────────────────────
 
     private void SetupThumbnails()

@@ -13,7 +13,7 @@ public class PhotoCaptureManager : MonoBehaviour
     [Header("결과 확인용 UI")]
     public RawImage resultPreview;
 
-    [Header("캡처할 영역 (투명 박스)")]
+    [Header("캡처할 영역 (투명 박스) - 폴백용")]
     public RectTransform captureArea;
 
     [Header("숨길 UI 모음")]
@@ -25,6 +25,10 @@ public class PhotoCaptureManager : MonoBehaviour
     [Header("재합성용 참조")]
     public RawImage webcamDisplay;
 
+    [Header("고품질 캡처 해상도")]
+    public int captureWidth  = 1920;
+    public int captureHeight = 1080;
+
     private bool isCapturing = false;
 
     private void Start()
@@ -32,11 +36,31 @@ public class PhotoCaptureManager : MonoBehaviour
         if (timerText != null) timerText.text = "";
     }
 
+    private AppState _lastState = AppState.Standby;
+    private float _captureCooldown = 0f;
+
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Return) && AppStateManager.Instance != null && AppStateManager.Instance.CurrentState == AppState.Capture)
+        var appState = AppStateManager.Instance;
+        if (appState == null) return;
+
+        if (_lastState != appState.CurrentState)
         {
-            TakePhoto();
+            _lastState = appState.CurrentState;
+            if (_lastState == AppState.Capture)
+            {
+                _captureCooldown = 0.5f; // 상태 진입 시 0.5초 대기 (이전 엔터 입력 무시)
+            }
+        }
+
+        if (_captureCooldown > 0f) _captureCooldown -= Time.deltaTime;
+
+        if (Input.GetKeyDown(KeyCode.Return) && appState.CurrentState == AppState.Capture)
+        {
+            if (_captureCooldown <= 0f)
+            {
+                TakePhoto();
+            }
         }
     }
 
@@ -59,7 +83,7 @@ public class PhotoCaptureManager : MonoBehaviour
 
         AppStateManager.Instance.ChangeState(AppState.Processing);
 
-        for (int i = 3; i > 0; i--)
+        for (int i = 5; i > 0; i--)
         {
             if (timerText != null) timerText.text = i.ToString();
             yield return new WaitForSeconds(1f);
@@ -72,7 +96,7 @@ public class PhotoCaptureManager : MonoBehaviour
 
         yield return new WaitForEndOfFrame();
 
-        Texture2D finalPhoto = SaveScreenshot(out string savedFileName);
+        Texture2D finalPhoto = HighQualityCapture(out string savedFileName);
 
         yield return StartCoroutine(FlashEffect());
 
@@ -90,8 +114,106 @@ public class PhotoCaptureManager : MonoBehaviour
         AppStateManager.Instance.ChangeState(AppState.Result);
     }
 
-    // PNG → JPG(품질 90)로 변경
-    private Texture2D SaveScreenshot(out string fileName)
+    // ─────────────────────────────────────────────────────────────────────
+    // 고품질 캡처: Graphics.Blit 로 배경 → 크로마키 → 전경을 GPU에서 합성
+    // 화면 스크린샷 대신 셰이더 결과를 직접 RenderTexture 에 뽑아냄
+    // ─────────────────────────────────────────────────────────────────────
+    private Texture2D HighQualityCapture(out string fileName)
+    {
+        fileName = "";
+
+        int w = captureWidth;
+        int h = captureHeight;
+
+        // ── 참조 수집 ────────────────────────────────────────────────────
+        var chromaCtrl = FindObjectOfType<ChromaKeyController>();
+        var bgMgr      = OverlayBGManager.Instance;
+
+        WebCamTexture webcamTex = chromaCtrl != null ? chromaCtrl.WebcamTexture : null;
+        Material      chromaMat = chromaCtrl != null ? chromaCtrl.ChromaMaterial : null;
+        Texture       bgTex     = bgMgr != null ? bgMgr.GetBackgroundTexture() : null;
+        Texture       fgTex     = bgMgr != null ? bgMgr.GetForegroundTexture() : null;
+
+        // 웹캠이나 머티리얼을 못 가져오면 기존 스크린샷으로 폴백
+        if (webcamTex == null || !webcamTex.isPlaying || chromaMat == null)
+        {
+            Debug.LogWarning("[PhotoCapture] 고품질 캡처 불가 — 스크린샷으로 폴백");
+            return FallbackScreenshot(out fileName);
+        }
+
+        // ── RenderTexture 생성 ───────────────────────────────────────────
+        // RT_A: 배경 (RGB)
+        // RT_B: 크로마키 결과 (RGBA — 인물 알파 포함)
+        // RT_C: 최종 합성 (RGB)
+        RenderTexture rtBg    = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        RenderTexture rtChroma = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        RenderTexture rtFinal = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+
+        rtBg.filterMode     = FilterMode.Bilinear;
+        rtChroma.filterMode = FilterMode.Bilinear;
+        rtFinal.filterMode  = FilterMode.Bilinear;
+
+        // ── Pass 1: 배경을 RT 에 그리기 ─────────────────────────────────
+        if (bgTex != null)
+            Graphics.Blit(bgTex, rtBg);
+        else
+            Graphics.Blit(Texture2D.blackTexture, rtBg); // 배경 없으면 검정
+
+        // ── Pass 2: 웹캠 → ChromaKey 셰이더 → rtChroma (RGBA) ─────────
+        Graphics.Blit(webcamTex, rtChroma, chromaMat);
+
+        // ── Pass 3: 배경 위에 크로마 결과 Alpha-Blend 합성 ─────────────
+        Graphics.Blit(rtBg, rtFinal);                               // 배경 복사
+        Graphics.Blit(rtChroma, rtFinal, GetAlphaBlendMat());       // 크로마키 알파 블렌드
+
+        // ── Pass 4: 전경(프레임) 합성 ────────────────────────────────────
+        if (fgTex != null)
+            Graphics.Blit(fgTex, rtFinal, GetAlphaBlendMat());
+
+        // ── RT → Texture2D 변환 ──────────────────────────────────────────
+        RenderTexture prevActive = RenderTexture.active;
+        RenderTexture.active = rtFinal;
+        Texture2D result = new Texture2D(w, h, TextureFormat.RGB24, false);
+        result.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+        result.Apply();
+        RenderTexture.active = prevActive;
+
+        // ── 저장 ─────────────────────────────────────────────────────────
+        string folderPath = Path.Combine(Application.dataPath, saveFolderName);
+        if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
+        fileName = "Photo_" + System.DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".jpg";
+        string fullPath = Path.Combine(folderPath, fileName);
+        File.WriteAllBytes(fullPath, result.EncodeToJPG(95));
+        Debug.Log($"[PhotoCapture] 고품질 저장 완료 ({w}x{h} JPG 95%): {fullPath}");
+
+        // ── 정리 ─────────────────────────────────────────────────────────
+        RenderTexture.ReleaseTemporary(rtBg);
+        RenderTexture.ReleaseTemporary(rtChroma);
+        RenderTexture.ReleaseTemporary(rtFinal);
+
+        return result;
+    }
+
+    // Alpha-Blend 전용 재사용 머티리얼
+    private static Material _alphaBlendMat;
+    private static Material GetAlphaBlendMat()
+    {
+        if (_alphaBlendMat == null)
+        {
+            _alphaBlendMat = new Material(Shader.Find("UI/Default"));
+            _alphaBlendMat.SetInt("_SrcBlend",  (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            _alphaBlendMat.SetInt("_DstBlend",  (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            _alphaBlendMat.SetInt("_ZWrite",    0);
+            _alphaBlendMat.DisableKeyword("_ALPHATEST_ON");
+            _alphaBlendMat.EnableKeyword("_ALPHABLEND_ON");
+        }
+        return _alphaBlendMat;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 폴백: 기존 스크린샷 방식 (고품질 캡처 실패 시)
+    // ─────────────────────────────────────────────────────────────────────
+    private Texture2D FallbackScreenshot(out string fileName)
     {
         fileName = "";
 
@@ -110,7 +232,7 @@ public class PhotoCaptureManager : MonoBehaviour
         Vector3[] canvasCorners = new Vector3[4];
         canvasRect.GetWorldCorners(canvasCorners);
 
-        float canvasWidth = canvasCorners[2].x - canvasCorners[0].x;
+        float canvasWidth  = canvasCorners[2].x - canvasCorners[0].x;
         float canvasHeight = canvasCorners[2].y - canvasCorners[0].y;
 
         float xRatio = (captureCorners[0].x - canvasCorners[0].x) / canvasWidth;
@@ -118,9 +240,9 @@ public class PhotoCaptureManager : MonoBehaviour
         float wRatio = (captureCorners[2].x - captureCorners[0].x) / canvasWidth;
         float hRatio = (captureCorners[2].y - captureCorners[0].y) / canvasHeight;
 
-        int startX = Mathf.RoundToInt(Screen.width * xRatio);
-        int startY = Mathf.RoundToInt(Screen.height * yRatio);
-        int realWidth = Mathf.RoundToInt(Screen.width * wRatio);
+        int startX    = Mathf.RoundToInt(Screen.width  * xRatio);
+        int startY    = Mathf.RoundToInt(Screen.height * yRatio);
+        int realWidth = Mathf.RoundToInt(Screen.width  * wRatio);
         int realHeight = Mathf.RoundToInt(Screen.height * hRatio);
 
         if (realWidth <= 0 || realHeight <= 0) return null;
@@ -131,15 +253,10 @@ public class PhotoCaptureManager : MonoBehaviour
 
         string folderPath = Path.Combine(Application.dataPath, saveFolderName);
         if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
-
-        // JPG로 저장 (품질 90 — PNG 대비 파일 크기 약 1/5)
         fileName = "Photo_" + System.DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".jpg";
         string fullPath = Path.Combine(folderPath, fileName);
-
-        byte[] bytes = tex.EncodeToJPG(90);
-        File.WriteAllBytes(fullPath, bytes);
-
-        Debug.Log($"[PhotoCapture] 저장 완료: {fullPath}");
+        File.WriteAllBytes(fullPath, tex.EncodeToJPG(95));
+        Debug.Log($"[PhotoCapture] 폴백 저장 완료: {fullPath}");
         return tex;
     }
 
@@ -147,10 +264,10 @@ public class PhotoCaptureManager : MonoBehaviour
     {
         if (flashScreen == null) yield break;
         flashScreen.gameObject.SetActive(true);
-        flashScreen.transform.SetAsLastSibling(); // 제일 위에 렌더링되도록 보장
+        flashScreen.transform.SetAsLastSibling();
         flashScreen.color = new Color(1, 1, 1, 1);
         float duration = 0.5f;
-        float elapsed = 0;
+        float elapsed  = 0;
 
         while (elapsed < duration)
         {
@@ -160,6 +277,6 @@ public class PhotoCaptureManager : MonoBehaviour
             yield return null;
         }
         flashScreen.color = new Color(1, 1, 1, 0);
-        flashScreen.gameObject.SetActive(false); // 불필요한 그리기 부하 방지
+        flashScreen.gameObject.SetActive(false);
     }
 }

@@ -24,6 +24,9 @@ Shader "PhotoBooth/ChromaKey"
         _TargetColor    ("Target Color",     Color)        = (0, 0.694, 0.251, 1)
         _Sensitivity    ("Sensitivity",      Range(0.01, 1.0)) = 0.35
         _Smoothness     ("Smoothness",       Range(0.0,  0.5)) = 0.08
+        _LumaWeight     ("Luma Weight",      Range(0.0,  1.0)) = 0.0
+        _EdgeChoke      ("Edge Choke",       Range(0.0,  0.5)) = 0.0
+        _PreBlur        ("Pre Blur (px)",    Range(0.0,  5.0)) = 0.0
 
         // ── Branch B: Spill Removal ──────────────────────────────────────────
         _SpillRemoval   ("Spill Removal",    Range(0.0,  1.0)) = 0.15
@@ -106,10 +109,14 @@ Shader "PhotoBooth/ChromaKey"
             // ── 프로퍼티 바인딩 ────────────────────────────────────────────────
             sampler2D _MainTex;
             float4    _MainTex_ST;
+            float4    _MainTex_TexelSize;
 
             fixed4  _TargetColor;
             float   _Sensitivity;
             float   _Smoothness;
+            float   _LumaWeight;
+            float   _EdgeChoke;
+            float   _PreBlur;
             float   _SpillRemoval;
             float   _Brightness;
             float   _Contrast;
@@ -138,22 +145,22 @@ Shader "PhotoBooth/ChromaKey"
             }
 
             // ── 헬퍼: Spill Removal ────────────────────────────────────────────
-            // 인물 테두리에 번진 배경색(초록빛)을 중립 톤으로 교정
+            // 인물 테두리에 번진 배경색(초록빛 등)을 중립 톤으로 교정
             float3 RemoveSpill(float3 rgb, float3 keyColor, float strength)
             {
-                // 키 색상의 주 채널 강도 계산
                 float keyMax = max(keyColor.r, max(keyColor.g, keyColor.b));
-                float keyMin = min(keyColor.r, min(keyColor.g, keyColor.b));
-
-                // 픽셀에서 키 색상이 dominating 채널에 해당하는 부분만 제거
-                float spillR = max(0.0, rgb.r - (rgb.r + rgb.b) * 0.5 * step(keyColor.r, keyColor.g));
-                float spillG = max(0.0, rgb.g - max(rgb.r, rgb.b));
-                float spillB = max(0.0, rgb.b - (rgb.r + rgb.g) * 0.5 * step(keyColor.b, keyColor.g));
-
-                // 그린 키에 최적화: G 채널 억제
-                float gSpill = max(0.0, rgb.g - max(rgb.r, rgb.b));
                 float3 corrected = rgb;
-                corrected.g = corrected.g - gSpill * strength;
+
+                if (keyMax == keyColor.g) {
+                    float excess = max(0.0, rgb.g - max(rgb.r, rgb.b));
+                    corrected.g -= excess * strength;
+                } else if (keyMax == keyColor.b) {
+                    float excess = max(0.0, rgb.b - max(rgb.r, rgb.g));
+                    corrected.b -= excess * strength;
+                } else {
+                    float excess = max(0.0, rgb.r - max(rgb.g, rgb.b));
+                    corrected.r -= excess * strength;
+                }
 
                 return saturate(corrected);
             }
@@ -179,21 +186,37 @@ Shader "PhotoBooth/ChromaKey"
                 float3 keyColor = _TargetColor.rgb;
 
                 // ==============================================================
+                //  [단계 0] Screen Pre-blur (Chroma Blur)
+                //  5-Tap Gaussian, 정규화 가중치 합 = 1.0
+                //  가중치: 중심=0.4026, ±x/±y=0.1493 each → 합 0.4026+4*0.1493=1.0
+                //  PreBlur=0 → t=(0,0) → 모든 샘플 동일 픽셀 → 결과 = 원본
+                // ==============================================================
+                float2 t = _MainTex_TexelSize.xy * _PreBlur;
+                float3 g0 = texColor.rgb;
+                float3 g1 = tex2D(_MainTex, IN.texcoord + float2( t.x,  0)).rgb;
+                float3 g2 = tex2D(_MainTex, IN.texcoord + float2(-t.x,  0)).rgb;
+                float3 g3 = tex2D(_MainTex, IN.texcoord + float2( 0,  t.y)).rgb;
+                float3 g4 = tex2D(_MainTex, IN.texcoord + float2( 0, -t.y)).rgb;
+                // 0.4026 + 4*0.1493 = 0.4026 + 0.5972 = 0.9998 ≈ 1.0
+                float3 blurredColor = g0 * 0.4026 + (g1 + g2 + g3 + g4) * 0.1493;
+
+                // ==============================================================
                 //  [단계 1] Branch A — Alpha Path
                 //  크로마키 연산 → Alpha Mask 추출
                 //  인물(키 색상과 다른 영역)은 불투명, 배경은 투명
                 // ==============================================================
 
-                // 루미넌스 분리 후 크로마 거리 계산 (루미넌스 변화에 덜 민감)
-                float3 diff      = texColor.rgb - keyColor;
+                // 루미넌스 분리 후 크로마 거리 계산 (LumaWeight에 따라 명도 반영률 결정)
+                // 블러 처리된 색상을 사용하여 마스크(알파)의 깍두기 현상을 원천 차단
+                float3 diff      = blurredColor - keyColor;
                 float  lumKey    = dot(keyColor, float3(0.2126, 0.7152, 0.0722));
-                float  lumTex    = dot(texColor.rgb, float3(0.2126, 0.7152, 0.0722));
-                float3 chromaDiff = diff - (lumTex - lumKey) * float3(0.2126, 0.7152, 0.0722);
+                float  lumTex    = dot(blurredColor, float3(0.2126, 0.7152, 0.0722));
+                float3 chromaDiff = diff - (lumTex - lumKey) * float3(0.2126, 0.7152, 0.0722) * (1.0 - _LumaWeight);
                 float  chromaDist = length(chromaDiff);
 
                 float alpha = smoothstep(
-                    _Sensitivity - _Smoothness,
-                    _Sensitivity + _Smoothness,
+                    _Sensitivity + _EdgeChoke,
+                    _Sensitivity + _Smoothness + _EdgeChoke,
                     chromaDist
                 );
 

@@ -30,6 +30,13 @@ public class AppStateManager : MonoBehaviour
     public Slider sensitivitySlider;
     public Slider smoothnessSlider;
     public Slider spillRemovalSlider;
+    public Slider lumaWeightSlider;
+    public Slider edgeChokeSlider;
+    public Slider preBlurSlider;
+
+    public GameObject magnifierPanel;
+    public RawImage magnifierRawImage;
+
     public Slider brightnessSlider;
     public Slider contrastSlider;
     public Slider saturationSlider;
@@ -48,8 +55,6 @@ public class AppStateManager : MonoBehaviour
     public Slider cropRightSlider;
     public Slider fadeXSlider;
     public Slider fadeYSlider;
-
-    public Toggle useLocalChromaToggle;
     public TextMeshProUGUI adminStepTitleText;
     public TextMeshProUGUI adminTargetNameText;
     private bool _isAdminUIUpdating = false;
@@ -92,6 +97,7 @@ public class AppStateManager : MonoBehaviour
 
     private bool _isTransitioning = false;
     private Coroutine _blinkCoroutine;
+    private float _standbyCooldown = 0f;
 
     private void Awake()
     {
@@ -109,6 +115,10 @@ public class AppStateManager : MonoBehaviour
         if (sensitivitySlider != null) sensitivitySlider.onValueChanged.AddListener(OnSensitivityChanged);
         if (smoothnessSlider != null) smoothnessSlider.onValueChanged.AddListener(OnSmoothnessChanged);
         if (spillRemovalSlider != null) spillRemovalSlider.onValueChanged.AddListener(OnSpillRemovalChanged);
+        if (lumaWeightSlider != null) lumaWeightSlider.onValueChanged.AddListener(OnLumaWeightChanged);
+        if (edgeChokeSlider != null) edgeChokeSlider.onValueChanged.AddListener(OnEdgeChokeChanged);
+        if (preBlurSlider != null) preBlurSlider.onValueChanged.AddListener(OnPreBlurChanged);
+
         if (brightnessSlider != null) brightnessSlider.onValueChanged.AddListener(OnBrightnessChanged);
         if (contrastSlider != null) contrastSlider.onValueChanged.AddListener(OnContrastChanged);
         if (saturationSlider != null) saturationSlider.onValueChanged.AddListener(OnSaturationChanged);
@@ -119,7 +129,7 @@ public class AppStateManager : MonoBehaviour
         if (moveYSlider != null) moveYSlider.onValueChanged.AddListener(OnMoveYChanged);
         if (rotationSlider != null) rotationSlider.onValueChanged.AddListener(OnRotationChanged);
 
-        if (useLocalChromaToggle != null) useLocalChromaToggle.onValueChanged.AddListener(OnUseLocalChromaToggled);
+
         
         if (cropTopSlider != null) cropTopSlider.onValueChanged.AddListener(OnCropTopChanged);
         if (cropBottomSlider != null) cropBottomSlider.onValueChanged.AddListener(OnCropBottomChanged);
@@ -131,6 +141,7 @@ public class AppStateManager : MonoBehaviour
 
     private void Update()
     {
+        if (_standbyCooldown > 0f) _standbyCooldown -= Time.deltaTime;
         if (Input.GetKey(KeyCode.LeftControl) && Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.S))
             ToggleAdminMode();
 
@@ -239,7 +250,14 @@ public class AppStateManager : MonoBehaviour
         if (Input.GetMouseButtonDown(0) || Input.anyKeyDown)
         {
             currentIdleTime = 0f;
-            if (currentState == AppState.Standby) PlayStandbyTransition();
+            if (currentState == AppState.Standby && _standbyCooldown <= 0f) 
+            {
+                // ESC나 관리자 모드 진입/해제에 사용된 키가 여전히 눌려있다면 무시
+                if (!Input.GetKey(KeyCode.Escape) && !Input.GetKey(KeyCode.LeftControl) && !Input.GetKey(KeyCode.LeftAlt))
+                {
+                    PlayStandbyTransition();
+                }
+            }
         }
         else
         {
@@ -265,6 +283,7 @@ public class AppStateManager : MonoBehaviour
         switch (currentState)
         {
             case AppState.Standby:
+                _standbyCooldown = 0.5f; // 상태 진입 직후의 잔여 키입력 방지
                 StartStandbyLoop();
                 if (OverlayBGManager.Instance != null) OverlayBGManager.Instance.HideOverlay();
                 break;
@@ -504,32 +523,57 @@ public class AppStateManager : MonoBehaviour
 
     public void ResetAdminCurrentBackground()
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || PhotoBoothConfigLoader.Instance == null) return;
-        var bg = PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex];
+        if (_isAdminUIUpdating || PhotoBoothConfigLoader.Instance == null) return;
+        var config = PhotoBoothConfigLoader.Instance.Config;
         
-        // Transform 초기화
-        bg.Transform.Zoom = 1.0f;
-        bg.Transform.MoveX = 0f;
-        bg.Transform.MoveY = 0f;
-        bg.Transform.Rotation = 0f;
-        
-        // Crop / Fade 초기화
-        bg.Crop.Top = 0;
-        bg.Crop.Bottom = 0;
-        bg.Crop.Left = 0;
-        bg.Crop.Right = 0;
-        bg.Crop.FadeX = 0;
-        bg.Crop.FadeY = 0;
-        
-        // Color 보정 초기화
-        bg.Color.Brightness = 0.0f;
-        bg.Color.Contrast = 1.0f;
-        bg.Color.Saturation = 1.0f;
-        bg.Color.Hue = 0f;
+        if (adminStep == AdminStep.GlobalChroma)
+        {
+            config.Global.TargetColor = "#00B140";
+            config.Global.MasterSensitivity = 0.0f;
+            config.Global.MasterSmoothness = 0.0f;
+            config.Global.MasterSpillRemoval = 0.0f;
+            config.Global.MasterLumaWeight = 0.0f;
+            config.Global.MasterEdgeChoke = 0.0f;
+            config.Global.MasterPreBlur = 0.0f;
+        }
+        else if (adminStep == AdminStep.LocalBackground)
+        {
+            var bg = config.Backgrounds[adminBgIndex];
+            
+            // Chroma 초기화 (전부 0)
+            bg.Chroma.UseLocalChroma = true; // 개별 초기화이므로 강제 적용 후 0으로 만듦
+            bg.Chroma.LocalTargetColor = "#00B140";
+            bg.Chroma.LocalSensitivity = 0.0f;
+            bg.Chroma.LocalSmoothness = 0.0f;
+            bg.Chroma.LocalSpillRemoval = 0.0f;
+            bg.Chroma.LocalLumaWeight = 0.0f;
+            bg.Chroma.LocalEdgeChoke = 0.0f;
+            bg.Chroma.LocalPreBlur = 0.0f;
+
+            // Transform 초기화
+            bg.Transform.Zoom = 100.0f; // 기본 확대율 100%
+            bg.Transform.MoveX = 0f;
+            bg.Transform.MoveY = 0f;
+            bg.Transform.Rotation = 0f;
+            
+            // Crop / Fade 초기화
+            bg.Crop.Top = 0;
+            bg.Crop.Bottom = 0;
+            bg.Crop.Left = 0;
+            bg.Crop.Right = 0;
+            bg.Crop.FadeX = 0;
+            bg.Crop.FadeY = 0;
+            
+            // Color 보정 초기화
+            bg.Color.Brightness = 0.0f;
+            bg.Color.Contrast = 100.0f;
+            bg.Color.Saturation = 100.0f;
+            bg.Color.Hue = 0f;
+        }
         
         RefreshAdminUI();
         ApplyAdminToPreview();
-        Debug.Log($"[Admin] 배경 {adminBgIndex} 번의 모든 세팅(위치/색상)이 초기화되었습니다.");
+        Debug.Log($"[Admin] {(adminStep == AdminStep.GlobalChroma ? "Global 마스터" : $"배경 {adminBgIndex}번")} 설정이 최초 상태(0)로 초기화되었습니다.");
     }
 
     public void ApplyAndSaveAdminConfig()
@@ -546,27 +590,41 @@ public class AppStateManager : MonoBehaviour
         }
     }
 
-    private void RefreshAdminUI()
+    public void RefreshAdminUI()
     {
         if (PhotoBoothConfigLoader.Instance == null || !PhotoBoothConfigLoader.Instance.IsLoaded) return;
         var config = PhotoBoothConfigLoader.Instance.Config;
         
         _isAdminUIUpdating = true;
 
+        Color targetC = Color.green;
+
         if (adminStep == AdminStep.GlobalChroma)
         {
             if (adminStepTitleText != null) adminStepTitleText.text = "[1] Global Chroma";
             if (adminTargetNameText != null) adminTargetNameText.text = "Global Master";
-            if (useLocalChromaToggle != null) useLocalChromaToggle.gameObject.SetActive(false);
 
             if (sensitivitySlider != null) sensitivitySlider.value = config.Global.MasterSensitivity;
             if (smoothnessSlider != null) smoothnessSlider.value = config.Global.MasterSmoothness;
             if (spillRemovalSlider != null) spillRemovalSlider.value = config.Global.MasterSpillRemoval;
+            if (lumaWeightSlider != null) lumaWeightSlider.value = config.Global.MasterLumaWeight;
+            if (edgeChokeSlider != null) edgeChokeSlider.value = config.Global.MasterEdgeChoke;
+            if (preBlurSlider != null) preBlurSlider.value = config.Global.MasterPreBlur;
 
-            // Global 페이지에서는 색상보정, 웹캠 변환, 마스크 비활성
+            if (cropTopSlider != null) cropTopSlider.value = config.Global.MasterCrop.Top;
+            if (cropBottomSlider != null) cropBottomSlider.value = config.Global.MasterCrop.Bottom;
+            if (cropLeftSlider != null) cropLeftSlider.value = config.Global.MasterCrop.Left;
+            if (cropRightSlider != null) cropRightSlider.value = config.Global.MasterCrop.Right;
+            if (fadeXSlider != null) fadeXSlider.value = config.Global.MasterCrop.FadeX;
+            if (fadeYSlider != null) fadeYSlider.value = config.Global.MasterCrop.FadeY;
+            
+            ColorUtility.TryParseHtmlString(config.Global.TargetColor, out targetC);
+
+            // Global 페이지에서는 크로마와 마스크 활성, 색상보정과 웹캠 변환 비활성
+            SetChromaSlidersVisible(true);
+            SetMaskSlidersVisible(true);
             SetColorSlidersVisible(false);
             SetTransformSlidersVisible(false);
-            SetMaskSlidersVisible(false);
 
             ApplyAdminBackgroundOverlay(-1);
         }
@@ -578,20 +636,13 @@ public class AppStateManager : MonoBehaviour
             if (adminStepTitleText != null) adminStepTitleText.text = $"[2] BG {adminBgIndex + 1}/{config.Backgrounds.Count}";
             if (adminTargetNameText != null) adminTargetNameText.text = bg.BgName;
 
-            if (useLocalChromaToggle != null)
-            {
-                useLocalChromaToggle.gameObject.SetActive(true);
-                useLocalChromaToggle.isOn = bg.Chroma.UseLocalChroma;
-            }
+            ColorUtility.TryParseHtmlString(config.Global.TargetColor, out targetC);
 
-            if (sensitivitySlider != null) sensitivitySlider.value = bg.Chroma.LocalSensitivity;
-            if (smoothnessSlider != null) smoothnessSlider.value = bg.Chroma.LocalSmoothness;
-            if (spillRemovalSlider != null) spillRemovalSlider.value = bg.Chroma.LocalSpillRemoval;
-
-            // 배경별 색상보정, 웹캠 변환, 마스크 활성
+            // 배경별 페이지에서는 색상보정, 웹캠 변환만 활성 (크로마, 마스크 비활성)
+            SetChromaSlidersVisible(false);
+            SetMaskSlidersVisible(false);
             SetColorSlidersVisible(true);
             SetTransformSlidersVisible(true);
-            SetMaskSlidersVisible(true);
             
             if (brightnessSlider != null) brightnessSlider.value = bg.Color.Brightness;
             if (contrastSlider != null) contrastSlider.value = bg.Color.Contrast;
@@ -602,43 +653,51 @@ public class AppStateManager : MonoBehaviour
             if (moveXSlider != null) moveXSlider.value = bg.Transform.MoveX;
             if (moveYSlider != null) moveYSlider.value = bg.Transform.MoveY;
             if (rotationSlider != null) rotationSlider.value = bg.Transform.Rotation;
-            
-            if (cropTopSlider != null) cropTopSlider.value = bg.Crop.Top;
-            if (cropBottomSlider != null) cropBottomSlider.value = bg.Crop.Bottom;
-            if (cropLeftSlider != null) cropLeftSlider.value = bg.Crop.Left;
-            if (cropRightSlider != null) cropRightSlider.value = bg.Crop.Right;
-            if (fadeXSlider != null) fadeXSlider.value = bg.Crop.FadeX;
-            if (fadeYSlider != null) fadeYSlider.value = bg.Crop.FadeY;
         }
 
         _isAdminUIUpdating = false;
         ApplyAdminToPreview();
     }
 
+    private void OnPreBlurChanged(float v)
+    {
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterPreBlur = v;
+        ApplyAdminToPreview();
+    }
+
     private void OnSensitivityChanged(float v)
     {
         if (_isAdminUIUpdating) return;
-        var config = PhotoBoothConfigLoader.Instance.Config;
-        if (adminStep == AdminStep.GlobalChroma) config.Global.MasterSensitivity = v;
-        else config.Backgrounds[adminBgIndex].Chroma.LocalSensitivity = v;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterSensitivity = v;
         ApplyAdminToPreview();
     }
 
     private void OnSmoothnessChanged(float v)
     {
         if (_isAdminUIUpdating) return;
-        var config = PhotoBoothConfigLoader.Instance.Config;
-        if (adminStep == AdminStep.GlobalChroma) config.Global.MasterSmoothness = v;
-        else config.Backgrounds[adminBgIndex].Chroma.LocalSmoothness = v;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterSmoothness = v;
         ApplyAdminToPreview();
     }
 
     private void OnSpillRemovalChanged(float v)
     {
         if (_isAdminUIUpdating) return;
-        var config = PhotoBoothConfigLoader.Instance.Config;
-        if (adminStep == AdminStep.GlobalChroma) config.Global.MasterSpillRemoval = v;
-        else config.Backgrounds[adminBgIndex].Chroma.LocalSpillRemoval = v;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterSpillRemoval = v;
+        ApplyAdminToPreview();
+    }
+
+    private void OnLumaWeightChanged(float v)
+    {
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterLumaWeight = v;
+        ApplyAdminToPreview();
+    }
+
+    private void OnEdgeChokeChanged(float v)
+    {
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterEdgeChoke = v;
         ApplyAdminToPreview();
     }
 
@@ -700,55 +759,46 @@ public class AppStateManager : MonoBehaviour
     
     private void OnCropTopChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.Top = Mathf.RoundToInt(v);
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.Top = Mathf.RoundToInt(v);
         ApplyAdminToPreview();
     }
 
     private void OnCropBottomChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.Bottom = Mathf.RoundToInt(v);
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.Bottom = Mathf.RoundToInt(v);
         ApplyAdminToPreview();
     }
 
     private void OnCropLeftChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.Left = Mathf.RoundToInt(v);
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.Left = Mathf.RoundToInt(v);
         ApplyAdminToPreview();
     }
 
     private void OnCropRightChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.Right = Mathf.RoundToInt(v);
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.Right = Mathf.RoundToInt(v);
         ApplyAdminToPreview();
     }
 
     private void OnFadeXChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.FadeX = Mathf.RoundToInt(v);
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.FadeX = Mathf.RoundToInt(v);
         ApplyAdminToPreview();
     }
 
     private void OnFadeYChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Crop.FadeY = Mathf.RoundToInt(v);
+        if (_isAdminUIUpdating) return;
+        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.FadeY = Mathf.RoundToInt(v);
         ApplyAdminToPreview();
     }
 
-    private void OnUseLocalChromaToggled(bool b)
-    {
-        if (_isAdminUIUpdating) return;
-        if (adminStep == AdminStep.LocalBackground)
-        {
-            PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Chroma.UseLocalChroma = b;
-            ApplyAdminToPreview();
-        }
-    }
 
     private void SetColorSlidersVisible(bool visible)
     {
@@ -774,6 +824,16 @@ public class AppStateManager : MonoBehaviour
         if (cropRightSlider != null && cropRightSlider.transform.parent != null) cropRightSlider.transform.parent.gameObject.SetActive(visible);
         if (fadeXSlider != null && fadeXSlider.transform.parent != null) fadeXSlider.transform.parent.gameObject.SetActive(visible);
         if (fadeYSlider != null && fadeYSlider.transform.parent != null) fadeYSlider.transform.parent.gameObject.SetActive(visible);
+    }
+
+    private void SetChromaSlidersVisible(bool visible)
+    {
+        if (sensitivitySlider != null && sensitivitySlider.transform.parent != null) sensitivitySlider.transform.parent.gameObject.SetActive(visible);
+        if (smoothnessSlider != null && smoothnessSlider.transform.parent != null) smoothnessSlider.transform.parent.gameObject.SetActive(visible);
+        if (spillRemovalSlider != null && spillRemovalSlider.transform.parent != null) spillRemovalSlider.transform.parent.gameObject.SetActive(visible);
+        if (edgeChokeSlider != null && edgeChokeSlider.transform.parent != null) edgeChokeSlider.transform.parent.gameObject.SetActive(visible);
+        if (lumaWeightSlider != null && lumaWeightSlider.transform.parent != null) lumaWeightSlider.transform.parent.gameObject.SetActive(visible);
+        if (preBlurSlider != null && preBlurSlider.transform.parent != null) preBlurSlider.transform.parent.gameObject.SetActive(visible);
     }
 
     private void MoveJoystickCursor(int step)
@@ -860,7 +920,13 @@ public class AppStateManager : MonoBehaviour
         {
             if (adminStep == AdminStep.GlobalChroma)
             {
-                var dummyBg = new BackgroundConfig { BgName = "Preview" };
+                // GlobalChroma 단계: 변환/색상은 기본값(안전한 값)으로 고정
+                var dummyBg = new BackgroundConfig
+                {
+                    BgName = "Preview",
+                    Transform = new TransformConfig { Zoom = 100f, MoveX = 0f, MoveY = 0f, Rotation = 0f },
+                    Color     = new ColorGradingConfig { Brightness = 0f, Contrast = 100f, Saturation = 100f, Hue = 0f }
+                };
                 controller.ApplyConfig(dummyBg);
             }
             else
