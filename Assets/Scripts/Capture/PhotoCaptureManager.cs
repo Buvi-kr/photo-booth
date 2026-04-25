@@ -192,6 +192,10 @@ public class PhotoCaptureManager : MonoBehaviour
                 float rad = -angle * Mathf.Deg2Rad;
                 captureMat.SetFloat("_CaptureRotation", rad);
             }
+            else
+            {
+                captureMat.SetFloat("_CaptureRotation", 0f);
+            }
 
             // ── Crop → _CropRect / _CropFade (UV 정규화) ─────────────────
             // RectMask2D.padding (L,B,R,T) = canvas 픽셀

@@ -188,27 +188,9 @@ Shader "PhotoBooth/ChromaKey"
                 OUT.worldPos = v.vertex;
                 OUT.vertex   = UnityObjectToClipPos(OUT.worldPos);
                 
-                // 1. 크롭 마스크용 원본 UV (0-1)
-                OUT.screenUV = v.texcoord;
-
-                // 2. 이미지 샘플링용 변형 UV (회전 -> 줌/이동)
-                float2 uv = v.texcoord;
-
-                // 2-1. 회전 (중심 0.5 기준)
-                if (abs(_CaptureRotation) > 0.0001)
-                {
-                    float2 uv_c = uv - 0.5;
-                    float  cosR = cos(_CaptureRotation);
-                    float  sinR = sin(_CaptureRotation);
-                    uv_c = float2(uv_c.x * cosR - uv_c.y * sinR,
-                                  uv_c.x * sinR + uv_c.y * cosR);
-                    uv = uv_c + 0.5;
-                }
-
-                // 2-2. 줌 및 이동 (_CaptureST 적용)
-                uv = uv * _CaptureST.xy + _CaptureST.zw;
-
-                OUT.texcoord = uv;
+                // [Blit Fix] 0-1 원본 UV를 그대로 프래그먼트로 전달
+                OUT.texcoord = v.texcoord;
+                OUT.screenUV = v.texcoord; 
                 OUT.color    = v.color;
                 return OUT;
             }
@@ -216,8 +198,27 @@ Shader "PhotoBooth/ChromaKey"
             // ── 프래그먼트 셰이더 ──────────────────────────────────────────────
             fixed4 frag(v2f IN) : SV_Target
             {
-                // 버텍스 셰이더에서 완벽하게 변형된 UV를 그대로 사용
+                // ==============================================================
+                //  [UV 트랜스폼 파이프라인] - UI(RectTransform)와 동일한 순서로 연산
+                //  1. screenUV (0-1 원본) -> 고정 마스크용
+                //  2. sampleUV (회전 -> 줌/이동) -> 이미지 샘플링용
+                // ==============================================================
+                float2 screenUV = IN.texcoord;
                 float2 sampleUV = IN.texcoord;
+
+                // [회전] 화면 중심(0.5) 기준 먼저 회전 (pivot 고정)
+                if (abs(_CaptureRotation) > 0.0001)
+                {
+                    float2 uv_c = sampleUV - 0.5;
+                    float  cosR = cos(_CaptureRotation);
+                    float  sinR = sin(_CaptureRotation);
+                    uv_c = float2(uv_c.x * cosR - uv_c.y * sinR,
+                                  uv_c.x * sinR + uv_c.y * cosR);
+                    sampleUV = uv_c + 0.5;
+                }
+
+                // [줌/이동] 회전된 좌표 위에 적용
+                sampleUV = sampleUV * _CaptureST.xy + _CaptureST.zw;
                 
                 half4 texColor = tex2D(_MainTex, sampleUV);
                 float3 keyColor = _TargetColor.rgb;
@@ -296,10 +297,10 @@ Shader "PhotoBooth/ChromaKey"
                 // ==============================================================
                 float2 cropFadeSafe = max(_CropFade.xy, 0.001);
                 float cropMask =
-                    smoothstep(0.0, cropFadeSafe.x, IN.screenUV.x - _CropRect.x) *  // Left
-                    smoothstep(0.0, cropFadeSafe.x, _CropRect.z   - IN.screenUV.x) * // Right
-                    smoothstep(0.0, cropFadeSafe.y, IN.screenUV.y - _CropRect.y) *  // Bottom
-                    smoothstep(0.0, cropFadeSafe.y, _CropRect.w   - IN.screenUV.y); // Top
+                    smoothstep(0.0, cropFadeSafe.x, screenUV.x - _CropRect.x) *  // Left
+                    smoothstep(0.0, cropFadeSafe.x, _CropRect.z   - screenUV.x) * // Right
+                    smoothstep(0.0, cropFadeSafe.y, screenUV.y - _CropRect.y) *  // Bottom
+                    smoothstep(0.0, cropFadeSafe.y, _CropRect.w   - screenUV.y); // Top
                 alpha *= saturate(cropMask);
 
                 // ==============================================================
@@ -336,6 +337,10 @@ Shader "PhotoBooth/ChromaKey"
                 //  Branch B 의 RGB + Branch A 의 Alpha → 인물 보정이 알파 무영향
                 // ==============================================================
                 half4 color = half4(rgb, alpha) * IN.color;
+
+                // [Alpha Ghosting Fix] Pre-multiplied Alpha 적용
+                // 알파가 0인 영역은 RGB도 0으로 강제하여 배경 합성 시 타는 현상 제거
+                color.rgb *= color.a;
 
                 // Unity UI 클리핑 마스크 적용
                 #ifdef UNITY_UI_CLIP_RECT
