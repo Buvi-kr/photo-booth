@@ -49,6 +49,10 @@ public class ChromaKeyController : MonoBehaviour
     public WebCamTexture WebcamTexture => _webcamTexture;
     /// <summary>현재 적용된 ChromaKey 머티리얼 (고품질 캡처용)</summary>
     public Material ChromaMaterial => _chromaMaterial;
+    /// <summary>WebCam RawImage의 RectTransform (캡처 UV 변환용)</summary>
+    public RectTransform WebcamRectTransform => _rectTransform;
+    /// <summary>RectMask2D Padding (크롭 정보 캡처용)</summary>
+    public Vector4 CropPadding => _rectMask2D != null ? _rectMask2D.padding : Vector4.zero;
 
     // ── 셰이더 프로퍼티 ID 캐시 (GetPropertyID 반복 호출 회피) ──────────────
     private static readonly int ID_TargetColor  = Shader.PropertyToID("_TargetColor");
@@ -203,11 +207,54 @@ public class ChromaKeyController : MonoBehaviour
         }
 
         _webcamTexture = new WebCamTexture(targetName, reqW, reqH, reqFPS);
+        // FilterMode를 Bilinear로 명시 (기본값도 Bilinear이나 방어적으로 설정)
+        // 2x SSAA 업샘플 시 tex2D 샘플이 Bilinear로 동작하도록 보장
+        _webcamTexture.filterMode = FilterMode.Bilinear;
         _webcamTexture.Play();
         _rawImage.texture = _webcamTexture;
 
-        Debug.Log("[ChromaKey] 웹캠 시작: " + targetName +
-                  " (" + reqW + "x" + reqH + " @" + reqFPS + "fps)");
+        Debug.Log($"[ChromaKey] 웹캠 시작 요청: {targetName} ({reqW}x{reqH} @{reqFPS}fps)");
+
+        // Play() 직후에는 실제 해상도가 확정되지 않음 → 1프레임 후 실제값 확인
+        StartCoroutine(LogActualWebcamResolution());
+    }
+
+    /// <summary>
+    /// Play() 직후 드라이버가 실제로 열어준 해상도를 로그에 기록.
+    /// USB 대역폭 부족 등으로 요청 해상도가 무시된 경우를 감지하기 위함.
+    /// </summary>
+    private System.Collections.IEnumerator LogActualWebcamResolution()
+    {
+        // 최대 2초까지 대기하며 웹캠이 실제 해상도를 반환할 때까지 기다림
+        float timeout = 2f;
+        while (_webcamTexture != null && (_webcamTexture.width <= 16 || _webcamTexture.height <= 16))
+        {
+            timeout -= Time.deltaTime;
+            if (timeout <= 0f) break;
+            yield return null;
+        }
+
+        if (_webcamTexture == null) yield break;
+
+        int actualW = _webcamTexture.width;
+        int actualH = _webcamTexture.height;
+
+        if (actualW <= 16 || actualH <= 16)
+        {
+            Debug.LogWarning($"[ChromaKey] ⚠️ 웹캠 실제 해상도 미확인 (아직 초기화 중?): {actualW}x{actualH}");
+        }
+        else
+        {
+            Debug.Log($"[ChromaKey] ✅ 웹캠 실제 해상도 확인: {actualW}x{actualH}" +
+                      $" (요청: {_webcamTexture.requestedWidth}x{_webcamTexture.requestedHeight})");
+
+            if (actualW < _webcamTexture.requestedWidth || actualH < _webcamTexture.requestedHeight)
+            {
+                Debug.LogWarning($"[ChromaKey] ⚠️ 드라이버가 해상도를 낮췄습니다! " +
+                                 $"요청 {_webcamTexture.requestedWidth}x{_webcamTexture.requestedHeight} → " +
+                                 $"실제 {actualW}x{actualH}. USB 대역폭 또는 카메라 지원 해상도를 확인하세요.");
+            }
+        }
     }
 
     private void Update()

@@ -36,6 +36,7 @@ Shader "PhotoBooth/ChromaKey"
         _Contrast       ("Contrast",         Range(0.0,  3.0)) = 1.0
         _Saturation     ("Saturation",       Range(0.0,  2.0)) = 1.0
         _Hue            ("Hue (degrees)",    Range(-180, 180)) = 0.0
+        _CaptureRotation("Capture Rotation (rad)", Float)      = 0.0
 
         // ── UI 스텐실 (Unity UI 표준) ────────────────────────────────────────
         _StencilComp    ("Stencil Comparison", Float) = 8
@@ -122,6 +123,7 @@ Shader "PhotoBooth/ChromaKey"
             float   _Contrast;
             float   _Saturation;
             float   _Hue;
+            float   _CaptureRotation; // 0 = UI 실시간, non-zero = 캡처 시 UV 회전 보정
 
             float4  _ClipRect;
             bool    _UseClipRect;
@@ -182,7 +184,18 @@ Shader "PhotoBooth/ChromaKey"
             // ── 프래그먼트 셰이더 ──────────────────────────────────────────────
             fixed4 frag(v2f IN) : SV_Target
             {
-                half4 texColor = tex2D(_MainTex, IN.texcoord);
+                // _CaptureRotation != 0 이면 UV를 중심 기준으로 회전 (캡처용)
+                float2 uv = IN.texcoord;
+                if (abs(_CaptureRotation) > 0.0001)
+                {
+                    float2 uv_c = uv - 0.5;
+                    float  cosR = cos(_CaptureRotation);
+                    float  sinR = sin(_CaptureRotation);
+                    uv_c = float2(uv_c.x * cosR - uv_c.y * sinR,
+                                  uv_c.x * sinR + uv_c.y * cosR);
+                    uv = uv_c + 0.5;
+                }
+                half4 texColor = tex2D(_MainTex, uv);
                 float3 keyColor = _TargetColor.rgb;
 
                 // ==============================================================

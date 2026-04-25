@@ -142,12 +142,50 @@ public class PhotoCaptureManager : MonoBehaviour
         }
 
         // ── 캡처 전용 머티리얼 복제 ──────────────────────────────────────
-        // chromaMat에는 RectMask2D가 설정한 UNITY_UI_CLIP_RECT 키워드가 활성화된 상태.
-        // Graphics.Blit 시 worldPos 좌표계가 UI와 달라 클립렉트가 잘못 적용 → 알파 파괴.
-        // 캡처 전용 복제본에서 마스크 키워드를 모두 끄고 블릿한다.
+        // UI 클립키워드 제거 + RectTransform의 Zoom/Move/Rotation을 UV로 인코딩
         Material captureMat = new Material(chromaMat);
         captureMat.DisableKeyword("UNITY_UI_CLIP_RECT");
         captureMat.DisableKeyword("UNITY_UI_ALPHACLIP");
+        captureMat.SetFloat("_CaptureRotation", 0f); // 기본값 초기화
+
+        // ── UI Transform → UV Transform 변환 ────────────────────────────
+        // localScale(s), anchoredPosition(px), localEulerAngles.z(deg) → mainTexture ST
+        RectTransform rt = chromaCtrl.WebcamRectTransform;
+        if (rt != null)
+        {
+            float s     = Mathf.Max(rt.localScale.x, 0.001f);
+            float mx    = rt.anchoredPosition.x;          // 픽셀 단위 이동
+            float my    = rt.anchoredPosition.y;
+            float angle = rt.localEulerAngles.z;          // 0~360
+
+            // 컨테이너(부모) 크기
+            float cW = rt.parent != null
+                ? rt.parent.GetComponent<RectTransform>()?.rect.width  ?? w
+                : w;
+            float cH = rt.parent != null
+                ? rt.parent.GetComponent<RectTransform>()?.rect.height ?? h
+                : h;
+
+            // Zoom → UV scale 역수: 2x 줌이면 UV 범위 0.5 (중심 50%만 샘플)
+            float uvScaleX = 1f / s;
+            float uvScaleY = 1f / s;
+
+            // Move → UV 오프셋: anchoredPosition을 컨테이너 크기 기준으로 정규화
+            // 오른쪽 이동 = 텍스처 왼쪽 당김 → UV offset 감산
+            float uvOffX = 0.5f * (1f - uvScaleX) - mx / (cW * s);
+            float uvOffY = 0.5f * (1f - uvScaleY) - my / (cH * s);
+
+            captureMat.mainTextureScale  = new Vector2(uvScaleX, uvScaleY);
+            captureMat.mainTextureOffset = new Vector2(uvOffX,   uvOffY);
+
+            // Rotation → 셰이더 _CaptureRotation (라디안, 반시계 = UI와 같은 방향)
+            if (Mathf.Abs(angle) > 0.01f)
+            {
+                // Unity UI는 Z 오일러 반시계가 양수 → 셰이더도 동일 부호
+                float rad = -angle * Mathf.Deg2Rad; // UV 회전은 부호 반전
+                captureMat.SetFloat("_CaptureRotation", rad);
+            }
+        }
 
         // ── RenderTexture 생성 ───────────────────────────────────────────
         // RT_A: 배경 (RGB)
@@ -187,13 +225,27 @@ public class PhotoCaptureManager : MonoBehaviour
         if (fgTex != null)
             Graphics.Blit(fgTex, rtFinal, GetAlphaBlendMat());
 
-        // ── RT → Texture2D 변환 ──────────────────────────────────────────
+        // ── RT → Texture2D 변환 (크롭 적용) ─────────────────────────────
+        // RectMask2D.padding(L,B,R,T)을 픽셀로 변환하여 ReadPixels 영역 결정
+        Vector4 pad = chromaCtrl.CropPadding; // (Left, Bottom, Right, Top) canvas px
+        // padding은 canvas px 단위 → 캡처 해상도로 스케일
+        float scaleToCapture = rt != null ? (float)w / (rt.parent?.GetComponent<RectTransform>()?.rect.width ?? w) : 1f;
+        int cropL = Mathf.RoundToInt(pad.x * scaleToCapture);
+        int cropB = Mathf.RoundToInt(pad.y * scaleToCapture);
+        int cropR = Mathf.RoundToInt(pad.z * scaleToCapture);
+        int cropT = Mathf.RoundToInt(pad.w * scaleToCapture);
+        int readX = Mathf.Clamp(cropL, 0, w - 1);
+        int readY = Mathf.Clamp(cropB, 0, h - 1);
+        int readW = Mathf.Clamp(w - cropL - cropR, 1, w);
+        int readH = Mathf.Clamp(h - cropB - cropT, 1, h);
+
         RenderTexture prevActive = RenderTexture.active;
         RenderTexture.active = rtFinal;
-        Texture2D result = new Texture2D(w, h, TextureFormat.RGB24, false);
-        result.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+        Texture2D result = new Texture2D(readW, readH, TextureFormat.RGB24, false);
+        result.ReadPixels(new Rect(readX, readY, readW, readH), 0, 0);
         result.Apply();
         RenderTexture.active = prevActive;
+        Debug.Log($"[PhotoCapture] 크롭 적용: pad=({cropL},{cropB},{cropR},{cropT}) → {readW}x{readH}");
 
         // ── 저장 ─────────────────────────────────────────────────────────
         string folderPath = Path.Combine(Application.dataPath, saveFolderName);
