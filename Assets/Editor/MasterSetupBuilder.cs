@@ -690,17 +690,19 @@ public class MasterSetupBuilder
             cRT.anchorMin = validButtons[0].anchorMin;
             cRT.anchorMax = validButtons[0].anchorMax;
             cRT.pivot = validButtons[0].pivot;
-            cRT.sizeDelta = validButtons[0].sizeDelta; // 버튼 사이즈와 동일하게 맞춤 (오프셋 팽창 X)
+            // 버튼보다 상하로 10px 더 여유를 줌 (좌우는 그대로)
+            cRT.sizeDelta = new Vector2(validButtons[0].sizeDelta.x, validButtons[0].sizeDelta.y + 10);
 
             Image cImg = cursorObj.AddComponent<Image>();
             cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게 속을 비움
             cImg.raycastTarget = false;
             
-            // 테두리 오프셋을 0으로 설정하여 버튼 사각형에 정확히 꽉 채움
-            CreateBorder(cursorObj, "TopBorder", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(40, 20), Vector2.zero);
-            CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(40, 20), Vector2.zero);
-            CreateBorder(cursorObj, "LeftBorder", new Vector2(0, 0), new Vector2(0, 1), new Vector2(0.0f, 0.5f), new Vector2(20, 0), Vector2.zero);
-            CreateBorder(cursorObj, "RightBorder", new Vector2(1, 0), new Vector2(1, 1), new Vector2(1.0f, 0.5f), new Vector2(20, 0), Vector2.zero);
+            // 테두리 두께 20px, 가로/세로 길이를 두께만큼 확장하여 모서리 끝단 결합 (Perfect Corner)
+            float t = 20f; // 테두리 두께
+            CreateBorder(cursorObj, "TopBorder",    new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(t * 2, t), Vector2.zero);
+            CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(t * 2, t), Vector2.zero);
+            CreateBorder(cursorObj, "LeftBorder",   new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f), new Vector2(t, t * 2), Vector2.zero);
+            CreateBorder(cursorObj, "RightBorder",  new Vector2(1, 0), new Vector2(1, 1), new Vector2(1, 0.5f), new Vector2(t, t * 2), Vector2.zero);
 
             appState.selectCursor = cRT;
             Debug.Log("✅ [SelectBG] JoystickSelectCursor 자동 생성 및 연결 완료");
@@ -891,17 +893,19 @@ public class MasterSetupBuilder
             cRT.anchorMin = validButtons[0].anchorMin;
             cRT.anchorMax = validButtons[0].anchorMax;
             cRT.pivot = validButtons[0].pivot;
-            cRT.sizeDelta = validButtons[0].sizeDelta; // 팽창 금지
+            // 버튼보다 상하로 10px 더 여유를 줌 (좌우는 그대로)
+            cRT.sizeDelta = new Vector2(validButtons[0].sizeDelta.x, validButtons[0].sizeDelta.y + 10);
 
             Image cImg = cursorObj.AddComponent<Image>();
             cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게
             cImg.raycastTarget = false;
 
-            // 테두리 오프셋을 0으로 설정하여 버튼 사각형에 정확히 꽉 채움
-            CreateBorder(cursorObj, "TopBorder", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(40, 20), Vector2.zero);
+            // 테두리 두께 20px, 가로/세로 길이를 두께만큼 확장하여 모서리 끝단 결합 (Perfect Corner)
+            float t = 20f; // 테두리 두께
+            CreateBorder(cursorObj, "TopBorder",    new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(t * 2, t), Vector2.zero);
             CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(40, 20), Vector2.zero);
-            CreateBorder(cursorObj, "LeftBorder", new Vector2(0, 0), new Vector2(0, 1), new Vector2(0.0f, 0.5f), new Vector2(20, 0), Vector2.zero);
-            CreateBorder(cursorObj, "RightBorder", new Vector2(1, 0), new Vector2(1, 1), new Vector2(1.0f, 0.5f), new Vector2(20, 0), Vector2.zero);
+            CreateBorder(cursorObj, "LeftBorder",   new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f), new Vector2(t, t * 2), Vector2.zero);
+            CreateBorder(cursorObj, "RightBorder",  new Vector2(1, 0), new Vector2(1, 1), new Vector2(1, 0.5f), new Vector2(t, t * 2), Vector2.zero);
 
             appState.resultCursor = cRT;
             Debug.Log("✅ [Result] ResultSelectCursor 자동 생성 및 연결 완료");
