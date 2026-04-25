@@ -690,8 +690,10 @@ public class MasterSetupBuilder
             cRT.anchorMin = validButtons[0].anchorMin;
             cRT.anchorMax = validButtons[0].anchorMax;
             cRT.pivot = validButtons[0].pivot;
-            // 버튼보다 상하로 10px 더 여유를 줌 (좌우는 그대로)
-            cRT.sizeDelta = new Vector2(validButtons[0].sizeDelta.x, validButtons[0].sizeDelta.y + 10);
+            // 좌우 15px씩(총 30), 상단 15px/하단 5px(총 20) 늘림
+            cRT.sizeDelta = new Vector2(validButtons[0].sizeDelta.x + 30, validButtons[0].sizeDelta.y + 20);
+            // 상하 불균형(15 vs 5) 보정을 위해 위로 5px 이동
+            cRT.anchoredPosition = new Vector2(0, 5);
 
             Image cImg = cursorObj.AddComponent<Image>();
             cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게 속을 비움
@@ -893,8 +895,10 @@ public class MasterSetupBuilder
             cRT.anchorMin = validButtons[0].anchorMin;
             cRT.anchorMax = validButtons[0].anchorMax;
             cRT.pivot = validButtons[0].pivot;
-            // 버튼보다 상하로 10px 더 여유를 줌 (좌우는 그대로)
-            cRT.sizeDelta = new Vector2(validButtons[0].sizeDelta.x, validButtons[0].sizeDelta.y + 10);
+            // 좌우 15px씩(총 30), 상단 15px/하단 5px(총 20) 늘림
+            cRT.sizeDelta = new Vector2(validButtons[0].sizeDelta.x + 30, validButtons[0].sizeDelta.y + 20);
+            // 상하 불균형(15 vs 5) 보정을 위해 위로 5px 이동
+            cRT.anchoredPosition = new Vector2(0, 5);
 
             Image cImg = cursorObj.AddComponent<Image>();
             cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게
