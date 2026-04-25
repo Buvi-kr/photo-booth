@@ -131,6 +131,22 @@ public class GlobalChromaConfig
     [JsonProperty("masterSpillRemoval")]
     public float MasterSpillRemoval { get; set; } = 0.15f;
 
+    /// <summary>전역 명도 가중치. 0.0이면 색상만 보고, 1.0이면 밝기까지 똑같아야 투명해짐.</summary>
+    [JsonProperty("masterLumaWeight")]
+    public float MasterLumaWeight { get; set; } = 0.0f;
+
+    /// <summary>전역 외곽선 축소. 인물 테두리를 약간 깎아내어 스필 잔여물을 제거함.</summary>
+    [JsonProperty("masterEdgeChoke")]
+    public float MasterEdgeChoke { get; set; } = 0.0f;
+
+    /// <summary>전역 사전 블러. 0~5.0 범위 픽셀 블러링으로 웹캠 계단현상 제거.</summary>
+    [JsonProperty("masterPreBlur")]
+    public float MasterPreBlur { get; set; } = 0.0f;
+
+    /// <summary>전역 크롭 및 페이딩 설정. 모든 배경에 동일하게 적용된다.</summary>
+    [JsonProperty("masterCrop")]
+    public CropConfig MasterCrop { get; set; } = new CropConfig();
+
     // ── 변환 헬퍼 ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -174,35 +190,9 @@ public class BackgroundConfig
     [JsonProperty("color")]
     public ColorGradingConfig Color { get; set; } = new ColorGradingConfig();
 
-    /// <summary>[Chroma Override] 마스터 값 상속 여부 및 배경 전용 크로마 3종 세트.</summary>
+    /// <summary>[Chroma Override] (사용되지 않음) 하위 호환성을 위해 유지.</summary>
     [JsonProperty("chroma")]
     public LocalChromaConfig Chroma { get; set; } = new LocalChromaConfig();
-
-    // ── Override Logic 헬퍼 (명세서 2.2 핵심 로직) ───────────────────────────
-
-    /// <summary>
-    /// 실제 적용할 Sensitivity 를 반환한다.
-    /// useLocalChroma=false → Global.MasterSensitivity 상속 (Fallback)
-    /// useLocalChroma=true  → Chroma.LocalSensitivity 강제 적용 (Override)
-    /// </summary>
-    public float GetEffectiveSensitivity(GlobalChromaConfig global) =>
-        Chroma.UseLocalChroma ? Chroma.LocalSensitivity : global.MasterSensitivity;
-
-    /// <summary>
-    /// 실제 적용할 Smoothness 를 반환한다.
-    /// useLocalChroma=false → Global.MasterSmoothness 상속 (Fallback)
-    /// useLocalChroma=true  → Chroma.LocalSmoothness 강제 적용 (Override)
-    /// </summary>
-    public float GetEffectiveSmoothness(GlobalChromaConfig global) =>
-        Chroma.UseLocalChroma ? Chroma.LocalSmoothness : global.MasterSmoothness;
-
-    /// <summary>
-    /// 실제 적용할 SpillRemoval 을 반환한다.
-    /// useLocalChroma=false → Global.MasterSpillRemoval 상속 (Fallback)
-    /// useLocalChroma=true  → Chroma.LocalSpillRemoval 강제 적용 (Override)
-    /// </summary>
-    public float GetEffectiveSpillRemoval(GlobalChromaConfig global) =>
-        Chroma.UseLocalChroma ? Chroma.LocalSpillRemoval : global.MasterSpillRemoval;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -341,6 +331,10 @@ public class LocalChromaConfig
     [JsonProperty("useLocalChroma")]
     public bool UseLocalChroma { get; set; } = false;
 
+    /// <summary>배경 전용 타겟 색상. UseLocalChroma=true 일 때만 유효.</summary>
+    [JsonProperty("localTargetColor")]
+    public string LocalTargetColor { get; set; } = "#00B140";
+
     /// <summary>배경 전용 민감도. UseLocalChroma=true 일 때만 유효. (권장: 0.1~1.0)</summary>
     [JsonProperty("localSensitivity")]
     public float LocalSensitivity { get; set; } = 0.35f;
@@ -352,4 +346,16 @@ public class LocalChromaConfig
     /// <summary>배경 전용 반사광 제거. UseLocalChroma=true 일 때만 유효. (권장: 0.0~1.0)</summary>
     [JsonProperty("localSpillRemoval")]
     public float LocalSpillRemoval { get; set; } = 0.15f;
+
+    /// <summary>배경 전용 명도 가중치. UseLocalChroma=true 일 때만 유효.</summary>
+    [JsonProperty("localLumaWeight")]
+    public float LocalLumaWeight { get; set; } = 0.0f;
+
+    /// <summary>배경 전용 외곽선 축소. UseLocalChroma=true 일 때만 유효.</summary>
+    [JsonProperty("localEdgeChoke")]
+    public float LocalEdgeChoke { get; set; } = 0.0f;
+
+    /// <summary>배경 전용 사전 블러. UseLocalChroma=true 일 때만 유효.</summary>
+    [JsonProperty("localPreBlur")]
+    public float LocalPreBlur { get; set; } = 0.0f;
 }

@@ -30,7 +30,8 @@ public class ChromaKeyController : MonoBehaviour
     // ── 내부 컴포넌트 ─────────────────────────────────────────────────────────
     private RawImage      _rawImage;
     private RectTransform _rectTransform;
-    private RectMask2D    _rectMask2D;
+    private Mask          _mask;
+    private Image         _maskImage;
     private RectTransform _parentRect;
     private Material      _chromaMaterial;
     private WebCamTexture _webcamTexture;
@@ -51,11 +52,13 @@ public class ChromaKeyController : MonoBehaviour
     public Material ChromaMaterial => _chromaMaterial;
     /// <summary>WebCam RawImage의 RectTransform (캡처 UV 변환용)</summary>
     public RectTransform WebcamRectTransform => _rectTransform;
-    /// <summary>RectMask2D Padding (크롭 정보 캡처용)</summary>
-    public Vector4 CropPadding => _rectMask2D != null ? _rectMask2D.padding : Vector4.zero;
-    /// <summary>RectMask2D Softness (크롭 페이드 캡처용)</summary>
-    public Vector2 CropFade    => _rectMask2D != null
-        ? new Vector2(_rectMask2D.softness.x, _rectMask2D.softness.y)
+    /// <summary>Crop Padding (저장용 흉내)</summary>
+    public Vector4 CropPadding => _lastCrop != null 
+        ? new Vector4(_lastCrop.Left, _lastCrop.Bottom, _lastCrop.Right, _lastCrop.Top) 
+        : Vector4.zero;
+    /// <summary>Crop Fade (저장용 흉내)</summary>
+    public Vector2 CropFade => _lastCrop != null
+        ? new Vector2(_lastCrop.FadeX, _lastCrop.FadeY)
         : Vector2.zero;
 
     // ── 셰이더 프로퍼티 ID 캐시 (GetPropertyID 반복 호출 회피) ──────────────
@@ -84,8 +87,16 @@ public class ChromaKeyController : MonoBehaviour
         
         _rawImage      = GetComponent<RawImage>();
         _rectTransform = GetComponent<RectTransform>();
-        _rectMask2D    = GetComponentInParent<RectMask2D>();
-        if (_rectMask2D != null) _parentRect = _rectMask2D.GetComponent<RectTransform>();
+        _mask          = GetComponentInParent<Mask>();
+        if (_mask != null) 
+        {
+            _parentRect = _mask.GetComponent<RectTransform>();
+            _maskImage  = _mask.GetComponent<Image>();
+
+            // 안정적인 변환을 위해 부모의 피벗과 앵커를 중앙으로 고정
+            _parentRect.anchorMin = _parentRect.anchorMax = new Vector2(0.5f, 0.5f);
+            _parentRect.pivot = new Vector2(0.5f, 0.5f);
+        }
 
         InitMaterial();
         StartWebcam();
@@ -377,21 +388,26 @@ public class ChromaKeyController : MonoBehaviour
     /// </summary>
     private void ApplyTrueCrop(CropConfig crop)
     {
-        if (_rawImage == null || _rectTransform == null || _rectMask2D == null || _parentRect == null) return;
+        if (_rawImage == null || _rectTransform == null || _parentRect == null) return;
 
-        // 크롭 설정 저장 (Transform 적용 후 재보정에 사용)
         _lastCrop = crop;
 
-        // [Fixed Logic] RectMask2D.padding 을 사용하여 실제 '패딩' 처럼 작동하게 합니다.
-        _parentRect.offsetMin = Vector2.zero;
-        _parentRect.offsetMax = Vector2.zero;
-        
-        _rectMask2D.padding = new Vector4(crop.Left, crop.Bottom, crop.Right, crop.Top);
+        // 디자인 베이스 해상도 (웹캠 해상도가 아닌, UI에서 보여줄 기준 크기)
+        // 설정된 requestedWidth/Height 를 기준으로 사용하여 디자인 의도(1920x1080 등)에 맞게 고정
+        float baseW = requestedWidth > 0 ? requestedWidth : 1920f;
+        float baseH = requestedHeight > 0 ? requestedHeight : 1080f;
 
-        // 페이딩 (부드러운 테두리) 적용
-        _rectMask2D.softness = new Vector2Int(crop.FadeX, crop.FadeY);
+        // [New Logic] 부모(Mask)의 크기를 조절하여 물리적 크롭 구현
+        float croppedW = baseW - crop.Left - crop.Right;
+        float croppedH = baseH - crop.Bottom - crop.Top;
 
-        // uvRect는 기본값(0,0,1,1)으로 초기화 (Transform 단계에서 다시 계산)
+        _parentRect.sizeDelta = new Vector2(croppedW, croppedH);
+
+        // [New Logic] 자식(RawImage)은 원본 크기를 유지하되, 크롭 방향에 맞춰 오프셋 이동
+        _rectTransform.sizeDelta = new Vector2(baseW, baseH);
+        _rectTransform.anchoredPosition = new Vector2((crop.Right - crop.Left) / 2f, (crop.Top - crop.Bottom) / 2f);
+
+        // uvRect는 기본값(0,0,1,1) 유지
         _rawImage.uvRect = new Rect(0, 0, 1, 1);
     }
 
@@ -401,40 +417,30 @@ public class ChromaKeyController : MonoBehaviour
     /// </summary>
     private void ApplyTransform(TransformConfig tr)
     {
-        if (_rawImage == null || _rectTransform == null) return;
+        if (_rawImage == null || _rectTransform == null || _parentRect == null) return;
         
-        // [New Logic] 물리적인 이동 및 확대 적용 (자연스럽게 마스크에 의해 잘림)
-        // Zoom: localScale 로 확대 (100% 기준) - 이전 설정값 호환 처리
+        // [New Logic] 모든 변환(확대/이동/회전)을 부모(Mask)에게 적용
+        // 이렇게 하면 마스크와 인물이 한 몸처럼 움직여서 테두리 부활 현상이 생기지 않음
+        
+        // Zoom: 부모의 localScale 로 확대 (100% 기준)
         float zoomVal = tr.Zoom <= 5.0f ? tr.Zoom * 100f : tr.Zoom;
         float s = Mathf.Max(zoomVal / 100f, 0.01f);
-        _rectTransform.localScale = new Vector3(s, s, 1f);
+        _parentRect.localScale = new Vector3(s, s, 1f);
 
-        // MoveX/Y: -100 ~ 100 범위를 -1000px ~ 1000px 로 환산 (10 곱하기) - 이전 설정값 호환
+        // MoveX/Y: 부모의 anchoredPosition 을 조절
         float moveX = (Mathf.Abs(tr.MoveX) <= 1.0f && tr.MoveX != 0f) ? tr.MoveX * 100f : tr.MoveX;
         float moveY = (Mathf.Abs(tr.MoveY) <= 1.0f && tr.MoveY != 0f) ? tr.MoveY * 100f : tr.MoveY;
-        _rectTransform.anchoredPosition = new Vector2(moveX * 10f, moveY * 10f);
+        _parentRect.anchoredPosition = new Vector2(moveX * 10f, moveY * 10f);
 
-        // Rotation: 기존방식 유지 (-180 ~ 180도)
-        _rectTransform.localEulerAngles = new Vector3(0f, 0f, tr.Rotation);
+        // Rotation: 부모 자체를 회전시킴 (마스크도 함께 회전)
+        _parentRect.localEulerAngles = new Vector3(0f, 0f, tr.Rotation);
         
-        // uvRect 는 건드리지 않음 (0,0,1,1) -> 바둑판 현상 방지
-        _rawImage.uvRect = new Rect(0, 0, 1, 1);
+        // 자식(웹캠 이미지)은 부모에 대해 상대적으로 고정 (ApplyTrueCrop 에서 잡은 위치 유지)
+        _rectTransform.localScale = Vector3.one;
+        _rectTransform.localEulerAngles = Vector3.zero;
 
-        // ── 크롭 재보정: 축소 시 배경 부활 방지 ────────────────────────────────
-        // RectMask2D.padding은 컨테이너 좌표계 기준이므로, localScale 이 1 미만이면
-        // 이미지가 줄어들어 잘렸던 영역 바깥이 드러난다.
-        // Scale < 1인 경우, padding을 scale로 나눠 상대적 마스크 범위를 유지한다.
-        if (_rectMask2D != null && _lastCrop != null && s > 0f)
-        {
-            float inv = 1f / s; // scale이 작을수록 padding을 넓혀서 바깥쪽 노출 차단
-            float cropScale = Mathf.Max(inv, 1f); // 100% 이상 줌일 때는 보정 불필요
-            _rectMask2D.padding = new Vector4(
-                _lastCrop.Left   * cropScale,
-                _lastCrop.Bottom * cropScale,
-                _lastCrop.Right  * cropScale,
-                _lastCrop.Top    * cropScale
-            );
-        }
+        // uvRect 는 건드리지 않음
+        _rawImage.uvRect = new Rect(0, 0, 1, 1);
     }
 
     /// <summary>

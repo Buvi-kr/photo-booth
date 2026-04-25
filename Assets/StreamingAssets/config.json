@@ -1,9 +1,20 @@
 ﻿{
   "global": {
-    "targetColor": "#F5F3F5",
-    "masterSensitivity": 0.0222597215,
-    "masterSmoothness": 0.08,
-    "masterSpillRemoval": 0.171718121
+    "targetColor": "#8DE420",
+    "masterSensitivity": 19.29211,
+    "masterSmoothness": 0.7655561,
+    "masterSpillRemoval": 100.0,
+    "masterLumaWeight": 0.0,
+    "masterEdgeChoke": 3.82781768,
+    "masterPreBlur": 0.0,
+    "masterCrop": {
+      "top": 0,
+      "bottom": 0,
+      "left": 385,
+      "right": 395,
+      "fadeX": 0,
+      "fadeY": 0
+    }
   },
   "camera": {
     "useDefaultDevice": true,
@@ -24,22 +35,26 @@
         "fadeY": 0
       },
       "transform": {
-        "zoom": 1.0,
+        "zoom": 100.0,
         "moveX": 0.0,
-        "moveY": 0.0,
+        "moveY": -7.34937763,
         "rotation": 0.0
       },
       "color": {
         "brightness": 0.0,
-        "contrast": 1.0,
-        "saturation": 1.0,
+        "contrast": 100.0,
+        "saturation": 100.0,
         "hue": 0.0
       },
       "chroma": {
         "useLocalChroma": true,
-        "localSensitivity": 0.5849488,
-        "localSmoothness": 0.12,
-        "localSpillRemoval": 0.2
+        "localTargetColor": "#00B140",
+        "localSensitivity": 0.0,
+        "localSmoothness": 0.0,
+        "localSpillRemoval": 0.0,
+        "localLumaWeight": 0.0,
+        "localEdgeChoke": 0.0,
+        "localPreBlur": 0.0
       }
     },
     {
@@ -47,57 +62,65 @@
       "crop": {
         "top": 0,
         "bottom": 0,
-        "left": 15,
-        "right": 15,
-        "fadeX": 0,
-        "fadeY": 0
-      },
-      "transform": {
-        "zoom": 1.02,
-        "moveX": 0.0,
-        "moveY": 0.0,
-        "rotation": 0.0
-      },
-      "color": {
-        "brightness": -0.05,
-        "contrast": 1.05,
-        "saturation": 0.95,
-        "hue": -3.0
-      },
-      "chroma": {
-        "useLocalChroma": false,
-        "localSensitivity": 0.35,
-        "localSmoothness": 0.08,
-        "localSpillRemoval": 0.15
-      }
-    },
-    {
-      "bgName": "3",
-      "crop": {
-        "top": 177,
-        "bottom": 253,
         "left": 0,
         "right": 0,
         "fadeX": 0,
         "fadeY": 0
       },
       "transform": {
-        "zoom": 0.852620244,
-        "moveX": 3.57627869E-07,
-        "moveY": 0.0,
-        "rotation": -89.13523
+        "zoom": 110.717865,
+        "moveX": 3.06218863,
+        "moveY": -17.7608433,
+        "rotation": 0.0
       },
       "color": {
         "brightness": 0.0,
-        "contrast": 1.0,
-        "saturation": 1.0,
+        "contrast": 100.0,
+        "saturation": 100.0,
         "hue": 0.0
       },
       "chroma": {
         "useLocalChroma": true,
-        "localSensitivity": 0.391266167,
-        "localSmoothness": 0.08,
-        "localSpillRemoval": 0.15
+        "localTargetColor": "#00B140",
+        "localSensitivity": 0.0,
+        "localSmoothness": 0.0,
+        "localSpillRemoval": 0.0,
+        "localLumaWeight": 0.0,
+        "localEdgeChoke": 0.0,
+        "localPreBlur": 0.0
+      }
+    },
+    {
+      "bgName": "3",
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0,
+        "fadeX": 0,
+        "fadeY": 0
+      },
+      "transform": {
+        "zoom": 69.27958,
+        "moveX": -6.7368927,
+        "moveY": 0.0,
+        "rotation": -90.14922
+      },
+      "color": {
+        "brightness": 0.0,
+        "contrast": 100.0,
+        "saturation": 100.0,
+        "hue": 0.0
+      },
+      "chroma": {
+        "useLocalChroma": true,
+        "localTargetColor": "#00B140",
+        "localSensitivity": 0.0,
+        "localSmoothness": 0.0,
+        "localSpillRemoval": 0.0,
+        "localLumaWeight": 0.0,
+        "localEdgeChoke": 0.0,
+        "localPreBlur": 0.0
       }
     },
     {
@@ -111,22 +134,26 @@
         "fadeY": 0
       },
       "transform": {
-        "zoom": 1.0,
+        "zoom": 103.06221,
         "moveX": 0.0,
         "moveY": 0.0,
         "rotation": 0.0
       },
       "color": {
         "brightness": 0.0,
-        "contrast": 1.0,
-        "saturation": 1.0,
+        "contrast": 100.0,
+        "saturation": 100.0,
         "hue": 0.0
       },
       "chroma": {
-        "useLocalChroma": false,
-        "localSensitivity": 0.35,
-        "localSmoothness": 0.08,
-        "localSpillRemoval": 0.15
+        "useLocalChroma": true,
+        "localTargetColor": "#00B140",
+        "localSensitivity": 0.0,
+        "localSmoothness": 0.0,
+        "localSpillRemoval": 0.0,
+        "localLumaWeight": 0.0,
+        "localEdgeChoke": 0.0,
+        "localPreBlur": 0.0
       }
     },
     {
@@ -140,22 +167,26 @@
         "fadeY": 0
       },
       "transform": {
-        "zoom": 1.0,
+        "zoom": 70.14328,
         "moveX": 0.0,
-        "moveY": 0.0,
+        "moveY": -5.511987,
         "rotation": 0.0
       },
       "color": {
         "brightness": 0.0,
-        "contrast": 1.0,
-        "saturation": 1.0,
+        "contrast": 100.0,
+        "saturation": 100.0,
         "hue": 0.0
       },
       "chroma": {
-        "useLocalChroma": false,
-        "localSensitivity": 0.462008357,
-        "localSmoothness": 0.162532628,
-        "localSpillRemoval": 0.15
+        "useLocalChroma": true,
+        "localTargetColor": "#00B140",
+        "localSensitivity": 0.0,
+        "localSmoothness": 0.0,
+        "localSpillRemoval": 0.0,
+        "localLumaWeight": 0.0,
+        "localEdgeChoke": 0.0,
+        "localPreBlur": 0.0
       }
     },
     {
@@ -169,22 +200,26 @@
         "fadeY": 0
       },
       "transform": {
-        "zoom": 1.0,
-        "moveX": 0.0,
-        "moveY": 0.0,
+        "zoom": 98.469,
+        "moveX": -6.556511E-05,
+        "moveY": 3.062284,
         "rotation": 0.0
       },
       "color": {
-        "brightness": -0.0306336284,
-        "contrast": 0.99320364,
-        "saturation": 0.999999642,
-        "hue": -2.14518785
+        "brightness": 0.0,
+        "contrast": 100.0,
+        "saturation": 100.0,
+        "hue": 0.0
       },
       "chroma": {
-        "useLocalChroma": false,
-        "localSensitivity": 0.35,
-        "localSmoothness": 0.08,
-        "localSpillRemoval": 0.3402508
+        "useLocalChroma": true,
+        "localTargetColor": "#00B140",
+        "localSensitivity": 0.0,
+        "localSmoothness": 0.0,
+        "localSpillRemoval": 0.0,
+        "localLumaWeight": 0.0,
+        "localEdgeChoke": 0.0,
+        "localPreBlur": 0.0
       }
     }
   ]

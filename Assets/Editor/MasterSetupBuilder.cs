@@ -96,7 +96,7 @@ public class MasterSetupBuilder
             return 0;
         }
 
-        // ★ 마스크 컨테이너 구성 (RectMask2D 지원)
+        // ★ 마스크 컨테이너 구성 (일반 Mask 지원 - 회전 크롭 완벽 대응)
         Transform parent = wcObj.transform.parent;
         GameObject maskObj = null;
         
@@ -128,10 +128,33 @@ public class MasterSetupBuilder
             wcRT.anchoredPosition = Vector2.zero;
         }
 
-        if (maskObj.GetComponent<RectMask2D>() == null)
+        RectTransform finalMaskRT = maskObj.GetComponent<RectTransform>();
+        if (finalMaskRT != null)
         {
-            Undo.AddComponent<RectMask2D>(maskObj);
-            Debug.Log("✅ [ChromaKey] MaskContainer에 RectMask2D 추가 완료");
+            // 안정적인 회전/이동을 위해 중앙 피벗 강제 설정
+            finalMaskRT.pivot = new Vector2(0.5f, 0.5f);
+        }
+
+        // 구형 RectMask2D 가 있다면 제거
+        RectMask2D oldRM2D = maskObj.GetComponent<RectMask2D>();
+        if (oldRM2D != null)
+        {
+            Undo.DestroyObjectImmediate(oldRM2D);
+            Debug.Log("🗑️ [ChromaKey] 구형 RectMask2D 제거 완료");
+        }
+
+        // 일반 Mask 구성을 위해 Image 컴포넌트 필수 추가
+        if (maskObj.GetComponent<Image>() == null)
+        {
+            Image img = Undo.AddComponent<Image>(maskObj);
+            img.color = Color.white; // 마스크 기본 컬러
+            Debug.Log("✅ [ChromaKey] MaskContainer에 Image 추가 완료");
+        }
+
+        if (maskObj.GetComponent<Mask>() == null)
+        {
+            Undo.AddComponent<Mask>(maskObj);
+            Debug.Log("✅ [ChromaKey] MaskContainer에 Mask 추가 완료 (회전 크롭 지원)");
         }
 
         // ★ 컴포넌트 체크 및 추가
@@ -357,17 +380,32 @@ public class MasterSetupBuilder
 
         // --- 크로마키 슬라이더 (항상 표시) ---
         appState.sensitivitySlider = CreateSlider(adminPanel, "SensitivitySlider",
-            "감도", 0f, 1f, 0.35f,
+            "감도 (Clip Black)", 0f, 100f, 35f,
             new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
         appState.smoothnessSlider = CreateSlider(adminPanel, "SmoothnessSlider",
-            "부드러움", 0f, 1f, 0.08f,
+            "부드러움 (Clip White)", 0f, 50f, 8f,
             new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
         appState.spillRemovalSlider = CreateSlider(adminPanel, "SpillSlider",
-            "스필 제거", 0f, 1f, 0.15f,
+            "스필 제거", 0f, 100f, 15f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
+        count++;
+
+        appState.edgeChokeSlider = CreateSlider(adminPanel, "EdgeChokeSlider",
+            "외곽선 축소 (Shrink)", 0f, 50f, 0f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
+        count++;
+
+        appState.lumaWeightSlider = CreateSlider(adminPanel, "LumaWeightSlider",
+            "명도 가중치 (Inside Mask)", 0f, 100f, 0f,
+            new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
+        count++;
+
+        appState.preBlurSlider = CreateSlider(adminPanel, "PreBlurSlider",
+            "사전 블러 (Screen Pre-blur)", 0f, 100f, 0f,
             new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
@@ -380,17 +418,17 @@ public class MasterSetupBuilder
 
         // --- 색상보정 슬라이더 (배경별 페이지에서만 활성) ---
         appState.brightnessSlider = CreateSlider(adminPanel, "BrightnessSlider",
-            "밝기", -1f, 1f, 0f,
+            "밝기", -100f, 100f, 0f,
             new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
         appState.contrastSlider = CreateSlider(adminPanel, "ContrastSlider",
-            "대비", 0f, 2f, 1f,
+            "대비", 0f, 200f, 100f,
             new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
         appState.saturationSlider = CreateSlider(adminPanel, "SaturationSlider",
-            "채도", 0f, 2f, 1f,
+            "채도", 0f, 200f, 100f,
             new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), koreanFont);
         count++;
 
@@ -400,7 +438,7 @@ public class MasterSetupBuilder
         count++;
 
         // --- 웹캠 변환 슬라이더 (우측 레이아웃) ---
-        int rightIdx = 3; // 색상 보정 구분선과 높이 맞춤
+        int rightIdx = 0; // 우측 상단부터 시작
         CreateTMP(adminPanel, "TransformSeparator",
             "── 웹캠 변환 (배경별) ──",
             14, FontStyle.Normal, new Color(1f, 0.4f, 0.4f), TextAlignmentOptions.TopLeft,
@@ -408,17 +446,17 @@ public class MasterSetupBuilder
             new Vector2(rightX, startY - gap * rightIdx++), new Vector2(300, 25), koreanFont);
 
         appState.zoomSlider = CreateSlider(adminPanel, "ZoomSlider",
-            "크기 (Zoom)", 0.5f, 3.0f, 1f,
+            "크기 (Zoom %)", 50f, 300f, 100f,
             new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
         count++;
 
         appState.moveXSlider = CreateSlider(adminPanel, "MoveXSlider",
-            "수평 이동", -1f, 1f, 0f,
+            "수평 이동", -100f, 100f, 0f,
             new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
         count++;
 
         appState.moveYSlider = CreateSlider(adminPanel, "MoveYSlider",
-            "수직 이동", -1f, 1f, 0f,
+            "수직 이동", -100f, 100f, 0f,
             new Vector2(0, 1), new Vector2(rightX, startY - gap * rightIdx++), koreanFont);
         count++;
 
@@ -474,6 +512,36 @@ public class MasterSetupBuilder
             appState, "ToggleColorPickMode");
         count++;
 
+        // --- 돋보기 패널 (Magnifier) 생성 ---
+        GameObject magnifierPanel = new GameObject("MagnifierPanel", typeof(RectTransform));
+        magnifierPanel.transform.SetParent(adminPanel.transform, false);
+        var magRect = magnifierPanel.GetComponent<RectTransform>();
+        magRect.sizeDelta = new Vector2(150, 150);
+        magRect.pivot = new Vector2(0.5f, 0.5f);
+        magRect.anchorMin = new Vector2(0, 0);
+        magRect.anchorMax = new Vector2(0, 0);
+        
+        var magBg = magnifierPanel.AddComponent<Image>();
+        magBg.color = Color.white; // 테두리 역할
+        
+        GameObject magView = new GameObject("View", typeof(RectTransform));
+        magView.transform.SetParent(magnifierPanel.transform, false);
+        var viewRect = magView.GetComponent<RectTransform>();
+        viewRect.sizeDelta = new Vector2(140, 140);
+        viewRect.anchoredPosition = Vector2.zero;
+        var magRawImage = magView.AddComponent<RawImage>();
+        
+        GameObject magCross = new GameObject("Crosshair", typeof(RectTransform));
+        magCross.transform.SetParent(magnifierPanel.transform, false);
+        var crossRect = magCross.GetComponent<RectTransform>();
+        crossRect.sizeDelta = new Vector2(10, 10);
+        var crossImg = magCross.AddComponent<Image>();
+        crossImg.color = Color.red;
+
+        magnifierPanel.SetActive(false);
+        appState.magnifierPanel = magnifierPanel;
+        appState.magnifierRawImage = magRawImage;
+
         CreateButton(adminPanel, "OpenFolderBtn", "📁 폴더 열기",
             new Color(0.3f, 0.4f, 0.7f), Color.white,
             new Vector2(1, 1), new Vector2(-150, -40), new Vector2(120, 40),
@@ -481,13 +549,8 @@ public class MasterSetupBuilder
         count++;
 
         // ══════════════════════════════════════════════════════════════
-        //  로컬 크로마 토글 및 초기화 (슬라이더들 아래)
+        //  초기화 버튼 (슬라이더들 아래)
         // ══════════════════════════════════════════════════════════════
-        appState.useLocalChromaToggle = CreateToggle(adminPanel, "UseLocalChromaToggle",
-            "Local Override",
-            new Vector2(0, 1), new Vector2(leftX + 10, startY - gap * idx++), new Vector2(250, 30));
-        count++;
-        
         CreateButton(adminPanel, "ResetLocalBtn", "🔃 0으로 초기화",
             new Color(0.8f, 0.3f, 0.3f), Color.white,
             new Vector2(0.5f, 0f), new Vector2(0, 100), new Vector2(200, 40),
@@ -588,7 +651,8 @@ public class MasterSetupBuilder
             if (rt != null)
             {
                 rt.sizeDelta = new Vector2(rt.sizeDelta.x - 20, rt.sizeDelta.y - 60);
-                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, rt.anchoredPosition.y + 10);
+                // 배경 선택 버튼 위치를 20px 더 위로 올림 (+10 -> +30)
+                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, rt.anchoredPosition.y + 30);
                 
                 // 아랫줄(4, 5, 6번째 즉 bgIndex 3, 4, 5)을 강제로 위로 5px 추가로 올림
                 if (bgIndex >= 3)
@@ -631,11 +695,11 @@ public class MasterSetupBuilder
             cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게 속을 비움
             cImg.raycastTarget = false;
             
-            // 사면 테두리(Image)를 생성할 때 중심으로부터 바깥쪽(Outward)으로 각각 15px씩 밀어내어 패딩(+30)을 생성!
-            CreateBorder(cursorObj, "TopBorder", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, 10), new Vector2(0, 15));
-            CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 10), new Vector2(0, -15));
-            CreateBorder(cursorObj, "LeftBorder", new Vector2(0, 0), new Vector2(0, 1), new Vector2(0.0f, 0.5f), new Vector2(10, 0), new Vector2(-15, 0));
-            CreateBorder(cursorObj, "RightBorder", new Vector2(1, 0), new Vector2(1, 1), new Vector2(1.0f, 0.5f), new Vector2(10, 0), new Vector2(15, 0));
+            // 테두리 오프셋을 0으로 설정하여 버튼 사각형에 정확히 꽉 채움
+            CreateBorder(cursorObj, "TopBorder", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(40, 20), Vector2.zero);
+            CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(40, 20), Vector2.zero);
+            CreateBorder(cursorObj, "LeftBorder", new Vector2(0, 0), new Vector2(0, 1), new Vector2(0.0f, 0.5f), new Vector2(20, 0), Vector2.zero);
+            CreateBorder(cursorObj, "RightBorder", new Vector2(1, 0), new Vector2(1, 1), new Vector2(1.0f, 0.5f), new Vector2(20, 0), Vector2.zero);
 
             appState.selectCursor = cRT;
             Debug.Log("✅ [SelectBG] JoystickSelectCursor 자동 생성 및 연결 완료");
@@ -832,11 +896,11 @@ public class MasterSetupBuilder
             cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게
             cImg.raycastTarget = false;
 
-            // 사면 테두리(Image) 생성 + 바깥쪽 15px 오프셋 적용
-            CreateBorder(cursorObj, "TopBorder", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, 10), new Vector2(0, 15));
-            CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 10), new Vector2(0, -15));
-            CreateBorder(cursorObj, "LeftBorder", new Vector2(0, 0), new Vector2(0, 1), new Vector2(0.0f, 0.5f), new Vector2(10, 0), new Vector2(-15, 0));
-            CreateBorder(cursorObj, "RightBorder", new Vector2(1, 0), new Vector2(1, 1), new Vector2(1.0f, 0.5f), new Vector2(10, 0), new Vector2(15, 0));
+            // 테두리 오프셋을 0으로 설정하여 버튼 사각형에 정확히 꽉 채움
+            CreateBorder(cursorObj, "TopBorder", new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(40, 20), Vector2.zero);
+            CreateBorder(cursorObj, "BottomBorder", new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(40, 20), Vector2.zero);
+            CreateBorder(cursorObj, "LeftBorder", new Vector2(0, 0), new Vector2(0, 1), new Vector2(0.0f, 0.5f), new Vector2(20, 0), Vector2.zero);
+            CreateBorder(cursorObj, "RightBorder", new Vector2(1, 0), new Vector2(1, 1), new Vector2(1.0f, 0.5f), new Vector2(20, 0), Vector2.zero);
 
             appState.resultCursor = cRT;
             Debug.Log("✅ [Result] ResultSelectCursor 자동 생성 및 연결 완료");
@@ -1154,7 +1218,7 @@ public class MasterSetupBuilder
         rt.anchoredPosition = anchoredPosOffset;
         
         Image img = borderObj.AddComponent<Image>();
-        img.color = new Color(1f, 0f, 0f, 1f); // 빨간 테두리 색상
+        img.color = new Color(0f, 1f, 1f, 1f); // 네온 청록색 (#00FFFF)
         img.raycastTarget = false;
     }
 

@@ -46,15 +46,16 @@ public class OverlayBGManager : MonoBehaviour
         else { Destroy(gameObject); return; }
     }
 
+    private void OnConfigReloadedHandler(PhotoBoothConfig _) => SetupThumbnails();
+
     private void Start()
     {
         ValidateConfigAlignment();
         HideOverlay();
-        
-        // Config가 로드될 때 썸네일 세팅하도록 구독
+
         if (PhotoBoothConfigLoader.Instance != null)
         {
-            PhotoBoothConfigLoader.Instance.OnConfigReloaded += (config) => SetupThumbnails();
+            PhotoBoothConfigLoader.Instance.OnConfigReloaded += OnConfigReloadedHandler;
             if (PhotoBoothConfigLoader.Instance.IsLoaded) SetupThumbnails();
         }
     }
@@ -62,7 +63,7 @@ public class OverlayBGManager : MonoBehaviour
     private void OnDestroy()
     {
         if (PhotoBoothConfigLoader.Instance != null)
-            PhotoBoothConfigLoader.Instance.OnConfigReloaded -= (config) => SetupThumbnails();
+            PhotoBoothConfigLoader.Instance.OnConfigReloaded -= OnConfigReloadedHandler;
 
         if (_loadedTexture != null) { Destroy(_loadedTexture); _loadedTexture = null; }
         if (_loadedFrontTexture != null) { Destroy(_loadedFrontTexture); _loadedFrontTexture = null; }

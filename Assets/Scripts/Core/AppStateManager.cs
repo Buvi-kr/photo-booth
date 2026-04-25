@@ -175,7 +175,7 @@ public class AppStateManager : MonoBehaviour
             if ((Mathf.Abs(h) > 0.5f || Mathf.Abs(v) > 0.5f) && _joystickCooldown <= 0f)
             {
                 MoveJoystickCursor((h > 0 || v < 0) ? 1 : -1);
-                _joystickCooldown = 0.3f; // 0.3초 쿨다운
+                _joystickCooldown = 0.8f; // 0.8초 쿨다운으로 상향 (중복 입력 방지)
             }
             else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S)) MoveJoystickCursor(1);
             else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W)) MoveJoystickCursor(-1);
@@ -187,19 +187,24 @@ public class AppStateManager : MonoBehaviour
             }
         }
 
-        // 셀렉트 커서(붉은 박스) 부드러운 이동 연출
+        // 셀렉트 커서(붉은 박스) 부드러운 이동 및 Pulse 애니메이션
         if (currentState == AppState.SelectBG && selectCursor != null && bgButtons != null && bgButtons.Length > _currentJoystickIndex)
         {
             if (bgButtons[_currentJoystickIndex] != null)
             {
                 if (!selectCursor.gameObject.activeSelf) selectCursor.gameObject.SetActive(true);
                 selectCursor.SetAsLastSibling();
-                // 버튼과 물리적 상태를 100% 동일하게 맞춰서 밀림 원천 차단 (테두리 오프셋으로 패딩 해결)
+                // 버튼과 물리적 상태를 100% 동일하게 맞춰서 밀림 원천 차단
                 selectCursor.anchorMin = bgButtons[_currentJoystickIndex].anchorMin;
                 selectCursor.anchorMax = bgButtons[_currentJoystickIndex].anchorMax;
                 selectCursor.pivot = bgButtons[_currentJoystickIndex].pivot;
                 selectCursor.position = Vector3.Lerp(selectCursor.position, bgButtons[_currentJoystickIndex].position, Time.deltaTime * 15f);
                 selectCursor.sizeDelta = Vector2.Lerp(selectCursor.sizeDelta, bgButtons[_currentJoystickIndex].sizeDelta, Time.deltaTime * 15f);
+
+                // Pulse 애니메이션 (0.4 ~ 1.0)
+                CanvasGroup cg = selectCursor.GetComponent<CanvasGroup>();
+                if (cg == null) cg = selectCursor.gameObject.AddComponent<CanvasGroup>();
+                cg.alpha = Mathf.PingPong(Time.time * 2f, 0.6f) + 0.4f;
             }
         }
         else if (selectCursor != null && selectCursor.gameObject.activeSelf)
@@ -217,7 +222,7 @@ public class AppStateManager : MonoBehaviour
             if ((Mathf.Abs(h) > 0.5f || Mathf.Abs(v) > 0.5f) && _joystickCooldown <= 0f)
             {
                 MoveResultCursor((h > 0 || v < 0) ? 1 : -1);
-                _joystickCooldown = 0.3f;
+                _joystickCooldown = 0.8f; // 0.8초 쿨다운
             }
             else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S)) MoveResultCursor(1);
             else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W)) MoveResultCursor(-1);
@@ -239,6 +244,11 @@ public class AppStateManager : MonoBehaviour
                     resultCursor.pivot = resultButtons[_currentResultIndex].pivot;
                     resultCursor.position = Vector3.Lerp(resultCursor.position, resultButtons[_currentResultIndex].position, Time.deltaTime * 15f);
                     resultCursor.sizeDelta = Vector2.Lerp(resultCursor.sizeDelta, resultButtons[_currentResultIndex].sizeDelta, Time.deltaTime * 15f);
+
+                    // Pulse 애니메이션 (0.4 ~ 1.0)
+                    CanvasGroup cg = resultCursor.GetComponent<CanvasGroup>();
+                    if (cg == null) cg = resultCursor.gameObject.AddComponent<CanvasGroup>();
+                    cg.alpha = Mathf.PingPong(Time.time * 2f, 0.6f) + 0.4f;
                 }
             }
         }
@@ -290,9 +300,13 @@ public class AppStateManager : MonoBehaviour
 
             case AppState.SelectBG:
                 _currentJoystickIndex = 0; // 진입 시 항상 첫번째 배경에 포커스
+                if (OverlayBGManager.Instance != null) OverlayBGManager.Instance.SetConfig(0); // 데이터 동기화
+                
                 if (selectCursor != null && bgButtons != null && bgButtons.Length > 0 && bgButtons[0] != null)
                 {
-                    selectCursor.position = bgButtons[0].position; // 애니메이션 없이 즉각적으로 이동
+                    // 애니메이션 없이 즉각적으로 이동 및 크기 동기화
+                    selectCursor.position = bgButtons[0].position; 
+                    selectCursor.sizeDelta = bgButtons[0].sizeDelta;
                 }
                 PlaySelectVideo();
                 break;
@@ -393,7 +407,38 @@ public class AppStateManager : MonoBehaviour
     private void UpdateUIVisibility()
     {
         if (panelStandby != null) panelStandby.SetActive(currentState == AppState.Standby);
-        if (panelSelectBG != null) panelSelectBG.SetActive(currentState == AppState.SelectBG);
+        if (panelSelectBG != null) 
+        {
+            panelSelectBG.SetActive(currentState == AppState.SelectBG);
+            if (currentState == AppState.SelectBG)
+            {
+                // [Hierarchy 최적화] 렌더링 순서 조정 (아래쪽일수록 화면 앞쪽)
+                // 1. 안내 영상(VideoPlayer)을 버튼 위로 올려서 버튼들을 가림
+                if (selectVideoPlayer != null) selectVideoPlayer.transform.SetSiblingIndex(panelSelectBG.transform.childCount - 2);
+                // 2. 셀렉트 커서를 가장 마지막(가장 앞)으로 보내서 영상 위에 보이게 함
+                if (selectCursor != null) selectCursor.SetAsLastSibling();
+                // 3. 자막(Subtitle) 하단 배치 안정화 (Bottom-Center 고정)
+                Transform subtitle = panelSelectBG.transform.Find("SelectBG_Subtitle");
+                if (subtitle != null)
+                {
+                    RectTransform sRT = subtitle.GetComponent<RectTransform>();
+                    sRT.anchorMin = new Vector2(0.5f, 0f);
+                    sRT.anchorMax = new Vector2(0.5f, 0f);
+                    sRT.anchoredPosition = new Vector2(0, 150f);
+                    sRT.SetAsLastSibling();
+                }
+                Transform subtitlePanel = panelSelectBG.transform.Find("SelectBG_Subtitle_Panel");
+                if (subtitlePanel != null)
+                {
+                    RectTransform spRT = subtitlePanel.GetComponent<RectTransform>();
+                    spRT.anchorMin = new Vector2(0.5f, 0f);
+                    spRT.anchorMax = new Vector2(0.5f, 0f);
+                    spRT.anchoredPosition = new Vector2(0, 150f);
+                    spRT.SetAsLastSibling();
+                }
+                if (subtitle != null) subtitle.SetAsLastSibling(); // 패널보다 글자가 앞
+            }
+        }
         if (panelCapture != null) panelCapture.SetActive(currentState == AppState.Capture ||
                                                           currentState == AppState.Calibration ||
                                                           currentState == AppState.Processing);
@@ -490,6 +535,9 @@ public class AppStateManager : MonoBehaviour
     // ── 관리자 패널(Admin UI) 통합 기능 ──
     public void NextAdminStep()
     {
+        var cfg = GetConfig();
+        if (cfg == null) return;
+
         if (adminStep == AdminStep.GlobalChroma)
         {
             adminStep = AdminStep.LocalBackground;
@@ -498,9 +546,7 @@ public class AppStateManager : MonoBehaviour
         }
         else
         {
-            int maxBg = PhotoBoothConfigLoader.Instance.Config.Backgrounds.Count;
-            adminBgIndex++;
-            if (adminBgIndex >= maxBg) adminBgIndex = 0;
+            adminBgIndex = (adminBgIndex + 1) % Mathf.Max(1, cfg.Backgrounds.Count);
             ApplyAdminBackgroundOverlay(adminBgIndex);
         }
         RefreshAdminUI();
@@ -638,8 +684,8 @@ public class AppStateManager : MonoBehaviour
 
             ColorUtility.TryParseHtmlString(config.Global.TargetColor, out targetC);
 
-            // 배경별 페이지에서는 색상보정, 웹캠 변환만 활성 (크로마, 마스크 비활성)
-            SetChromaSlidersVisible(false);
+            // 배경별 페이지에서도 색상보정, 웹캠 변환, 크로마키(Global 제어용) 활성
+            SetChromaSlidersVisible(true);
             SetMaskSlidersVisible(false);
             SetColorSlidersVisible(true);
             SetTransformSlidersVisible(true);
@@ -659,144 +705,139 @@ public class AppStateManager : MonoBehaviour
         ApplyAdminToPreview();
     }
 
+    // 슬라이더 콜백 공통 헬퍼
+    private PhotoBoothConfig GetConfig()
+    {
+        var loader = PhotoBoothConfigLoader.Instance;
+        return (loader != null && loader.IsLoaded) ? loader.Config : null;
+    }
+
+    private BackgroundConfig GetCurrentBg()
+    {
+        var cfg = GetConfig();
+        if (cfg == null || cfg.Backgrounds == null) return null;
+        if (adminBgIndex < 0 || adminBgIndex >= cfg.Backgrounds.Count) return null;
+        return cfg.Backgrounds[adminBgIndex];
+    }
+
     private void OnPreBlurChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterPreBlur = v;
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterPreBlur = v; ApplyAdminToPreview();
     }
 
     private void OnSensitivityChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterSensitivity = v;
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterSensitivity = v; ApplyAdminToPreview();
     }
 
     private void OnSmoothnessChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterSmoothness = v;
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterSmoothness = v; ApplyAdminToPreview();
     }
 
     private void OnSpillRemovalChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterSpillRemoval = v;
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterSpillRemoval = v; ApplyAdminToPreview();
     }
 
     private void OnLumaWeightChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterLumaWeight = v;
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterLumaWeight = v; ApplyAdminToPreview();
     }
 
     private void OnEdgeChokeChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterEdgeChoke = v;
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterEdgeChoke = v; ApplyAdminToPreview();
     }
 
     private void OnBrightnessChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Color.Brightness = v;
-        ApplyAdminToPreview();
+        var bg = GetCurrentBg(); if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || bg == null) return;
+        bg.Color.Brightness = v; ApplyAdminToPreview();
     }
 
     private void OnContrastChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Color.Contrast = v;
-        ApplyAdminToPreview();
+        var bg = GetCurrentBg(); if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || bg == null) return;
+        bg.Color.Contrast = v; ApplyAdminToPreview();
     }
 
     private void OnSaturationChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Color.Saturation = v;
-        ApplyAdminToPreview();
+        var bg = GetCurrentBg(); if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || bg == null) return;
+        bg.Color.Saturation = v; ApplyAdminToPreview();
     }
 
     private void OnHueChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Color.Hue = v;
-        ApplyAdminToPreview();
+        var bg = GetCurrentBg(); if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || bg == null) return;
+        bg.Color.Hue = v; ApplyAdminToPreview();
     }
 
     private void OnZoomChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.Zoom = v;
-        ApplyAdminToPreview();
+        var bg = GetCurrentBg(); if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || bg == null) return;
+        bg.Transform.Zoom = v; ApplyAdminToPreview();
     }
 
     private void OnMoveXChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.MoveX = v;
-        ApplyAdminToPreview();
+        var bg = GetCurrentBg(); if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || bg == null) return;
+        bg.Transform.MoveX = v; ApplyAdminToPreview();
     }
 
     private void OnMoveYChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.MoveY = v;
-        ApplyAdminToPreview();
+        var bg = GetCurrentBg(); if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || bg == null) return;
+        bg.Transform.MoveY = v; ApplyAdminToPreview();
     }
 
     private void OnRotationChanged(float v)
     {
-        if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground) return;
-        PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex].Transform.Rotation = v;
-        ApplyAdminToPreview();
+        var bg = GetCurrentBg(); if (_isAdminUIUpdating || adminStep != AdminStep.LocalBackground || bg == null) return;
+        bg.Transform.Rotation = v; ApplyAdminToPreview();
     }
-    
+
     private void OnCropTopChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.Top = Mathf.RoundToInt(v);
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterCrop.Top = Mathf.RoundToInt(v); ApplyAdminToPreview();
     }
 
     private void OnCropBottomChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.Bottom = Mathf.RoundToInt(v);
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterCrop.Bottom = Mathf.RoundToInt(v); ApplyAdminToPreview();
     }
 
     private void OnCropLeftChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.Left = Mathf.RoundToInt(v);
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterCrop.Left = Mathf.RoundToInt(v); ApplyAdminToPreview();
     }
 
     private void OnCropRightChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.Right = Mathf.RoundToInt(v);
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterCrop.Right = Mathf.RoundToInt(v); ApplyAdminToPreview();
     }
 
     private void OnFadeXChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.FadeX = Mathf.RoundToInt(v);
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterCrop.FadeX = Mathf.RoundToInt(v); ApplyAdminToPreview();
     }
 
     private void OnFadeYChanged(float v)
     {
-        if (_isAdminUIUpdating) return;
-        PhotoBoothConfigLoader.Instance.Config.Global.MasterCrop.FadeY = Mathf.RoundToInt(v);
-        ApplyAdminToPreview();
+        var cfg = GetConfig(); if (_isAdminUIUpdating || cfg == null) return;
+        cfg.Global.MasterCrop.FadeY = Mathf.RoundToInt(v); ApplyAdminToPreview();
     }
 
 
@@ -854,9 +895,14 @@ public class AppStateManager : MonoBehaviour
         else if (_currentResultIndex < 0) _currentResultIndex = resultButtons.Length - 1;
     }
 
+    private float _lastResultButtonTime = 0f;
+
     private void ExecuteResultButton()
     {
         if (resultButtons == null || resultButtons.Length == 0) return;
+        if (Time.time - _lastResultButtonTime < 1.0f) return; // 중복 클릭 방지
+        _lastResultButtonTime = Time.time;
+
         if (resultButtons[_currentResultIndex] != null)
         {
             Button btn = resultButtons[_currentResultIndex].GetComponent<Button>();
@@ -916,24 +962,22 @@ public class AppStateManager : MonoBehaviour
     private void ApplyAdminToPreview()
     {
         ChromaKeyController controller = Object.FindObjectOfType<ChromaKeyController>();
-        if (controller != null)
+        if (controller == null) return;
+
+        if (adminStep == AdminStep.GlobalChroma)
         {
-            if (adminStep == AdminStep.GlobalChroma)
+            var dummyBg = new BackgroundConfig
             {
-                // GlobalChroma 단계: 변환/색상은 기본값(안전한 값)으로 고정
-                var dummyBg = new BackgroundConfig
-                {
-                    BgName = "Preview",
-                    Transform = new TransformConfig { Zoom = 100f, MoveX = 0f, MoveY = 0f, Rotation = 0f },
-                    Color     = new ColorGradingConfig { Brightness = 0f, Contrast = 100f, Saturation = 100f, Hue = 0f }
-                };
-                controller.ApplyConfig(dummyBg);
-            }
-            else
-            {
-                var bg = PhotoBoothConfigLoader.Instance.Config.Backgrounds[adminBgIndex];
-                controller.ApplyConfig(bg);
-            }
+                BgName    = "Preview",
+                Transform = new TransformConfig { Zoom = 100f, MoveX = 0f, MoveY = 0f, Rotation = 0f },
+                Color     = new ColorGradingConfig { Brightness = 0f, Contrast = 100f, Saturation = 100f, Hue = 0f }
+            };
+            controller.ApplyConfig(dummyBg);
+        }
+        else
+        {
+            var bg = GetCurrentBg();
+            if (bg != null) controller.ApplyConfig(bg);
         }
     }
 }

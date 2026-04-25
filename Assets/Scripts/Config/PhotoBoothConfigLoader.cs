@@ -188,44 +188,33 @@ public class PhotoBoothConfigLoader : MonoBehaviour
             Global = new GlobalChromaConfig
             {
                 TargetColor        = "#00B140",
-                MasterSensitivity  = 0.35f,
-                MasterSmoothness   = 0.08f,
-                MasterSpillRemoval = 0.15f
+                MasterSensitivity  = 35f,
+                MasterSmoothness   = 8f,
+                MasterSpillRemoval = 15f,
+                MasterLumaWeight   = 0f,
+                MasterEdgeChoke    = 0f,
+                MasterPreBlur      = 0f,
+                MasterCrop         = new CropConfig { Top = 0, Bottom = 0, Left = 0, Right = 0, FadeX = 0, FadeY = 0 }
             },
             Backgrounds = new System.Collections.Generic.List<BackgroundConfig>
             {
                 new BackgroundConfig
                 {
                     BgName    = "constellation",
-                    Crop      = new CropConfig      { Top = 0,    Bottom = 0,    Left = 0,  Right = 0  },
-                    Transform = new TransformConfig { Zoom = 1.0f, MoveX = 0.0f, MoveY = 0.0f         },
-                    Color     = new ColorGradingConfig
-                                { Brightness = 0.0f, Contrast = 1.0f, Saturation = 1.0f, Hue = 0.0f  },
-                    Chroma    = new LocalChromaConfig
-                                { UseLocalChroma = false, LocalSensitivity = 0.35f,
-                                  LocalSmoothness = 0.08f, LocalSpillRemoval = 0.15f }
+                    Transform = new TransformConfig { Zoom = 100f, MoveX = 0f, MoveY = 0f, Rotation = 0f },
+                    Color     = new ColorGradingConfig { Brightness = 0f, Contrast = 100f, Saturation = 100f, Hue = 0f }
                 },
                 new BackgroundConfig
                 {
                     BgName    = "aurora",
-                    Crop      = new CropConfig      { Top = 20,   Bottom = 10,   Left = 0,  Right = 0  },
-                    Transform = new TransformConfig { Zoom = 1.05f, MoveX = 0.0f, MoveY = -0.02f       },
-                    Color     = new ColorGradingConfig
-                                { Brightness = 0.05f, Contrast = 1.1f, Saturation = 1.15f, Hue = 5.0f },
-                    Chroma    = new LocalChromaConfig
-                                { UseLocalChroma = true, LocalSensitivity = 0.42f,
-                                  LocalSmoothness = 0.12f, LocalSpillRemoval = 0.20f }
+                    Transform = new TransformConfig { Zoom = 105f, MoveX = 0f, MoveY = -2f, Rotation = 0f },
+                    Color     = new ColorGradingConfig { Brightness = 5f, Contrast = 110f, Saturation = 115f, Hue = 5f }
                 },
                 new BackgroundConfig
                 {
                     BgName    = "nebula",
-                    Crop      = new CropConfig      { Top = 0,    Bottom = 0,    Left = 15, Right = 15 },
-                    Transform = new TransformConfig { Zoom = 1.02f, MoveX = 0.0f, MoveY = 0.0f         },
-                    Color     = new ColorGradingConfig
-                                { Brightness = -0.05f, Contrast = 1.05f, Saturation = 0.95f, Hue = -3.0f },
-                    Chroma    = new LocalChromaConfig
-                                { UseLocalChroma = false, LocalSensitivity = 0.35f,
-                                  LocalSmoothness = 0.08f, LocalSpillRemoval = 0.15f }
+                    Transform = new TransformConfig { Zoom = 102f, MoveX = 0f, MoveY = 0f, Rotation = 0f },
+                    Color     = new ColorGradingConfig { Brightness = -5f, Contrast = 105f, Saturation = 95f, Hue = -3f }
                 }
             }
         };

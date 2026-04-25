@@ -37,6 +37,7 @@ Shader "PhotoBooth/ChromaKey"
         _Saturation     ("Saturation",       Range(0.0,  2.0)) = 1.0
         _Hue            ("Hue (degrees)",    Range(-180, 180)) = 0.0
         _CaptureRotation("Capture Rotation (rad)", Float)      = 0.0
+        _CaptureAspect  ("Capture Aspect (w/h)",  Float)      = 1.0
 
         // ── 쳨치 크롭 (UV 기준): 기본값 = 전체 표시 (잘림 없음) ─────────────────────────────
         // (left_uv, bottom_uv, right_uv_end, top_uv_end)  기본=-0.1~1.1 (no-crop)
@@ -132,6 +133,7 @@ Shader "PhotoBooth/ChromaKey"
             float   _Saturation;
             float   _Hue;
             float   _CaptureRotation;
+            float   _CaptureAspect;
             float4  _CaptureST; // (scaleX, scaleY, offsetX, offsetY) - Graphics.Blit 덮어쓰기 방지용
             float4  _CropRect;
             float4  _CropFade;
@@ -207,13 +209,16 @@ Shader "PhotoBooth/ChromaKey"
                 float2 sampleUV = IN.texcoord;
 
                 // [회전] 화면 중심(0.5) 기준 먼저 회전 (pivot 고정)
+                // _CaptureAspect(w/h) 로 정방형 UV 공간에서 회전하여 비정방형 RT 왜곡 보정
                 if (abs(_CaptureRotation) > 0.0001)
                 {
                     float2 uv_c = sampleUV - 0.5;
+                    uv_c.x *= _CaptureAspect;          // 정방형 UV 공간으로 변환
                     float  cosR = cos(_CaptureRotation);
                     float  sinR = sin(_CaptureRotation);
                     uv_c = float2(uv_c.x * cosR - uv_c.y * sinR,
                                   uv_c.x * sinR + uv_c.y * cosR);
+                    uv_c.x /= _CaptureAspect;          // 원래 UV 공간으로 복원
                     sampleUV = uv_c + 0.5;
                 }
 
