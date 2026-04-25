@@ -70,8 +70,8 @@ graph TD
     *   **2x SSAA (Super Sampling):** 4K 렌더링 후 1080p 다운샘플링으로 계단현상 제거.
     *   **Alpha Multi-tap Gaussian Blur:** 2텍셀 오프셋의 5탭 샘플링으로 4:2:2 압축 깍두기 현상 해결.
 *   **캡처 트랜스폼 및 크롭 완벽 동기화:**
-    *   **Shader-based Transform:** UI에서 설정한 확대(Zoom), 이동(Move), 회전(Rotation) 값을 셰이더 UV 변환 로직으로 인코딩하여 사진에도 1:1 반영.
-    *   **셰이더 기반 크롭(Crop) 및 페이딩:** UI 마스크 대신 셰이더 알파 마스킹을 사용하여 배경/프레임을 보존하면서 인물만 정교하게 크롭(Softness 페이드 포함).
+    *   **Shader-based Transform:** `Graphics.Blit`의 속성 초기화 문제를 방지하기 위해 커스텀 `_CaptureST` 변수를 도입하고, **회전 축(Pivot) 보정 로직**을 통해 확대/이동 상태에서도 정중앙 회전이 가능하도록 구현.
+    *   **셰이더 기반 크롭(Crop) 및 페이딩:** UI 마스크 대신 셰이더 알파 마스킹을 사용하여 배경/프레임을 보존하면서 인물만 정교하게 크롭(Softness 페이드 포함). 미리보기와 1:1 일치를 위해 원본 UV 공간에서 마스킹 수행.
 *   **시스템 안정성 강화:**
     *   **Cloudflare Tunnel:** 시작 시 잔존 `cloudflared.exe` 프로세스 강제 종료 로직 추가로 네트워크 충돌 방지.
     *   **UI 마스크 충돌 방지:** 캡처 시 전용 머티리얼을 복제하여 `RectMask2D`에 의한 알파 파괴 현상 수정.

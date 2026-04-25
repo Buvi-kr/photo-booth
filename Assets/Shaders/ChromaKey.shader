@@ -43,6 +43,7 @@ Shader "PhotoBooth/ChromaKey"
         _CropRect       ("Capture Crop Rect",  Vector)         = (-0.1, -0.1, 1.1, 1.1)
         // (fadeX_uv, fadeY_uv)  경계 페이드 폭
         _CropFade       ("Capture Crop Fade",  Vector)         = (0.001, 0.001, 0, 0)
+        _CaptureST      ("Capture Scale Offset", Vector)       = (1.0, 1.0, 0, 0)
 
         // ── UI 스텐실 (Unity UI 표준) ────────────────────────────────────────
         _StencilComp    ("Stencil Comparison", Float) = 8
@@ -131,8 +132,9 @@ Shader "PhotoBooth/ChromaKey"
             float   _Saturation;
             float   _Hue;
             float   _CaptureRotation;
-            float4  _CropRect;  // (leftUV, bottomUV, rightUV_end, topUV_end) 컴구로 = no-crop
-            float4  _CropFade;  // (fadeX_uv, fadeY_uv, 0, 0)
+            float4  _CaptureST; // (scaleX, scaleY, offsetX, offsetY) - Graphics.Blit 덮어쓰기 방지용
+            float4  _CropRect;
+            float4  _CropFade;
 
             float4  _ClipRect;
             bool    _UseClipRect;
@@ -194,18 +196,30 @@ Shader "PhotoBooth/ChromaKey"
             // ── 프래그먼트 셰이더 ──────────────────────────────────────────────
             fixed4 frag(v2f IN) : SV_Target
             {
-                // _CaptureRotation != 0 이면 UV를 중심 기준으로 회전 (캡처용)
-                float2 uv = IN.texcoord;
+                // ==============================================================
+                //  [UV 트랜스폼 파이프라인] - UI(RectTransform)와 동일한 순서로 연산
+                //  1. baseUV = screenUV (0-1 원본)
+                //  2. rotatedUV = 중심(0.5) 기준 회전
+                //  3. sampleUV = 회전된 좌표에 _CaptureST(줌/이동) 적용
+                // ==============================================================
+                float2 baseUV = IN.screenUV;
+                
+                // [회전] 화면 중심 기준
+                float2 rotatedUV = baseUV;
                 if (abs(_CaptureRotation) > 0.0001)
                 {
-                    float2 uv_c = uv - 0.5;
+                    float2 uv_c = baseUV - 0.5;
                     float  cosR = cos(_CaptureRotation);
                     float  sinR = sin(_CaptureRotation);
                     uv_c = float2(uv_c.x * cosR - uv_c.y * sinR,
                                   uv_c.x * sinR + uv_c.y * cosR);
-                    uv = uv_c + 0.5;
+                    rotatedUV = uv_c + 0.5;
                 }
-                half4 texColor = tex2D(_MainTex, uv);
+
+                // [줌/이동] _CaptureST.xy = scale, _CaptureST.zw = offset
+                float2 sampleUV = rotatedUV * _CaptureST.xy + _CaptureST.zw;
+                
+                half4 texColor = tex2D(_MainTex, sampleUV);
                 float3 keyColor = _TargetColor.rgb;
 
                 // ==============================================================
@@ -216,10 +230,10 @@ Shader "PhotoBooth/ChromaKey"
                 // ==============================================================
                 float2 t = _MainTex_TexelSize.xy * _PreBlur;
                 float3 g0 = texColor.rgb;
-                float3 g1 = tex2D(_MainTex, IN.texcoord + float2( t.x,  0)).rgb;
-                float3 g2 = tex2D(_MainTex, IN.texcoord + float2(-t.x,  0)).rgb;
-                float3 g3 = tex2D(_MainTex, IN.texcoord + float2( 0,  t.y)).rgb;
-                float3 g4 = tex2D(_MainTex, IN.texcoord + float2( 0, -t.y)).rgb;
+                float3 g1 = tex2D(_MainTex, sampleUV + float2( t.x,  0)).rgb;
+                float3 g2 = tex2D(_MainTex, sampleUV + float2(-t.x,  0)).rgb;
+                float3 g3 = tex2D(_MainTex, sampleUV + float2( 0,  t.y)).rgb;
+                float3 g4 = tex2D(_MainTex, sampleUV + float2( 0, -t.y)).rgb;
                 // 0.4026 + 4*0.1493 = 0.4026 + 0.5972 = 0.9998 ≈ 1.0
                 float3 blurredColor = g0 * 0.4026 + (g1 + g2 + g3 + g4) * 0.1493;
 
@@ -253,20 +267,20 @@ Shader "PhotoBooth/ChromaKey"
                 float2 ao = _MainTex_TexelSize.xy * 2.0;
 
                 // ± X 이웃
-                float3 raw1  = tex2D(_MainTex, IN.texcoord + float2( ao.x, 0)).rgb;
+                float3 raw1  = tex2D(_MainTex, sampleUV + float2( ao.x, 0)).rgb;
                 float3 cd1   = (raw1 - keyColor) - (dot(raw1, float3(0.2126,0.7152,0.0722)) - lumKey) * float3(0.2126,0.7152,0.0722) * (1.0 - _LumaWeight);
                 float alpha1 = smoothstep(edgeLow, edgeHigh, length(cd1));
 
-                float3 raw2  = tex2D(_MainTex, IN.texcoord + float2(-ao.x, 0)).rgb;
+                float3 raw2  = tex2D(_MainTex, sampleUV + float2(-ao.x, 0)).rgb;
                 float3 cd2   = (raw2 - keyColor) - (dot(raw2, float3(0.2126,0.7152,0.0722)) - lumKey) * float3(0.2126,0.7152,0.0722) * (1.0 - _LumaWeight);
                 float alpha2 = smoothstep(edgeLow, edgeHigh, length(cd2));
 
                 // ± Y 이웃
-                float3 raw3  = tex2D(_MainTex, IN.texcoord + float2(0,  ao.y)).rgb;
+                float3 raw3  = tex2D(_MainTex, sampleUV + float2(0,  ao.y)).rgb;
                 float3 cd3   = (raw3 - keyColor) - (dot(raw3, float3(0.2126,0.7152,0.0722)) - lumKey) * float3(0.2126,0.7152,0.0722) * (1.0 - _LumaWeight);
                 float alpha3 = smoothstep(edgeLow, edgeHigh, length(cd3));
 
-                float3 raw4  = tex2D(_MainTex, IN.texcoord + float2(0, -ao.y)).rgb;
+                float3 raw4  = tex2D(_MainTex, sampleUV + float2(0, -ao.y)).rgb;
                 float3 cd4   = (raw4 - keyColor) - (dot(raw4, float3(0.2126,0.7152,0.0722)) - lumKey) * float3(0.2126,0.7152,0.0722) * (1.0 - _LumaWeight);
                 float alpha4 = smoothstep(edgeLow, edgeHigh, length(cd4));
 

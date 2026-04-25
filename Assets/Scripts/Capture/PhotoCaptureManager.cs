@@ -182,8 +182,8 @@ public class PhotoCaptureManager : MonoBehaviour
             float uvOffX = 0.5f * (1f - uvScaleX) - mx / (cW * s);
             float uvOffY = 0.5f * (1f - uvScaleY) - my / (cH * s);
 
-            captureMat.mainTextureScale  = new Vector2(uvScaleX, uvScaleY);
-            captureMat.mainTextureOffset = new Vector2(uvOffX,   uvOffY);
+            // Graphics.Blit은 _MainTex_ST를 강제로 덮어쓰므로 커스텀 변수(_CaptureST)를 사용
+            captureMat.SetVector("_CaptureST", new Vector4(uvScaleX, uvScaleY, uvOffX, uvOffY));
 
             // Rotation → 셰이더 _CaptureRotation (라디안, 반시계 = UI와 같은 방향)
             if (Mathf.Abs(angle) > 0.01f)
