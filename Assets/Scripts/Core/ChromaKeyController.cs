@@ -107,8 +107,12 @@ public class ChromaKeyController : MonoBehaviour
         if (PhotoBoothConfigLoader.Instance != null)
             PhotoBoothConfigLoader.Instance.OnConfigReloaded -= OnConfigReloaded;
 
-        if (_webcamTexture != null && _webcamTexture.isPlaying)
-            _webcamTexture.Stop();
+        if (_webcamTexture != null)
+        {
+            if (_webcamTexture.isPlaying) _webcamTexture.Stop();
+            Destroy(_webcamTexture); // [Kiosk Fix] 하드웨어 점유 강제 해제
+            _webcamTexture = null;
+        }
 
         if (_chromaMaterial != null)
             Destroy(_chromaMaterial);

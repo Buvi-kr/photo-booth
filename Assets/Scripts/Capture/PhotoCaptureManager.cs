@@ -101,7 +101,14 @@ public class PhotoCaptureManager : MonoBehaviour
         yield return StartCoroutine(FlashEffect());
 
         if (resultPreview != null && finalPhoto != null)
+        {
+            // [Kiosk Optimization] 기존 텍스처 메모리 수동 해제 (OOM 방지)
+            if (resultPreview.texture != null)
+            {
+                Destroy(resultPreview.texture);
+            }
             resultPreview.texture = finalPhoto;
+        }
 
         if (QRServerManager.Instance != null)
             QRServerManager.Instance.GenerateQRCodeForFile(savedFileName);
