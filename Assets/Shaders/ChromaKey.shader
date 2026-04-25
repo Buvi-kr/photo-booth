@@ -187,8 +187,28 @@ Shader "PhotoBooth/ChromaKey"
 
                 OUT.worldPos = v.vertex;
                 OUT.vertex   = UnityObjectToClipPos(OUT.worldPos);
-                OUT.texcoord = TRANSFORM_TEX(v.texcoord, _MainTex);
-                OUT.screenUV = v.texcoord; // TRANSFORM_TEX 전의 원본 UV → 쳨치 컨킬링용
+                
+                // 1. 크롭 마스크용 원본 UV (0-1)
+                OUT.screenUV = v.texcoord;
+
+                // 2. 이미지 샘플링용 변형 UV (회전 -> 줌/이동)
+                float2 uv = v.texcoord;
+
+                // 2-1. 회전 (중심 0.5 기준)
+                if (abs(_CaptureRotation) > 0.0001)
+                {
+                    float2 uv_c = uv - 0.5;
+                    float  cosR = cos(_CaptureRotation);
+                    float  sinR = sin(_CaptureRotation);
+                    uv_c = float2(uv_c.x * cosR - uv_c.y * sinR,
+                                  uv_c.x * sinR + uv_c.y * cosR);
+                    uv = uv_c + 0.5;
+                }
+
+                // 2-2. 줌 및 이동 (_CaptureST 적용)
+                uv = uv * _CaptureST.xy + _CaptureST.zw;
+
+                OUT.texcoord = uv;
                 OUT.color    = v.color;
                 return OUT;
             }
@@ -196,28 +216,8 @@ Shader "PhotoBooth/ChromaKey"
             // ── 프래그먼트 셰이더 ──────────────────────────────────────────────
             fixed4 frag(v2f IN) : SV_Target
             {
-                // ==============================================================
-                //  [UV 트랜스폼 파이프라인] - UI(RectTransform)와 동일한 순서로 연산
-                //  1. baseUV = screenUV (0-1 원본)
-                //  2. rotatedUV = 중심(0.5) 기준 회전
-                //  3. sampleUV = 회전된 좌표에 _CaptureST(줌/이동) 적용
-                // ==============================================================
-                float2 baseUV = IN.screenUV;
-                
-                // [회전] 화면 중심 기준
-                float2 rotatedUV = baseUV;
-                if (abs(_CaptureRotation) > 0.0001)
-                {
-                    float2 uv_c = baseUV - 0.5;
-                    float  cosR = cos(_CaptureRotation);
-                    float  sinR = sin(_CaptureRotation);
-                    uv_c = float2(uv_c.x * cosR - uv_c.y * sinR,
-                                  uv_c.x * sinR + uv_c.y * cosR);
-                    rotatedUV = uv_c + 0.5;
-                }
-
-                // [줌/이동] _CaptureST.xy = scale, _CaptureST.zw = offset
-                float2 sampleUV = rotatedUV * _CaptureST.xy + _CaptureST.zw;
+                // 버텍스 셰이더에서 완벽하게 변형된 UV를 그대로 사용
+                float2 sampleUV = IN.texcoord;
                 
                 half4 texColor = tex2D(_MainTex, sampleUV);
                 float3 keyColor = _TargetColor.rgb;
