@@ -68,6 +68,8 @@ public class AppStateManager : MonoBehaviour
     [Header("조이스틱 네비게이션 UI")]
     public RectTransform selectCursor;
     public RectTransform[] bgButtons;
+    [Tooltip("커서가 버튼 바깥으로 나갈 픽셀 (음수면 안쪽). 5~15 추천")]
+    public float cursorPadding = 8f;
     private int _currentJoystickIndex = 0;
     private float _joystickCooldown = 0f;
 
@@ -147,10 +149,18 @@ public class AppStateManager : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            if (currentState == AppState.Result) ChangeState(AppState.SelectBG);
-            else if (currentState == AppState.Capture) ChangeState(AppState.SelectBG);
-            else if (currentState == AppState.SelectBG) ResetToStart();
-            else ResetToStart();
+            // 픽 모드 중이면 ESC 는 픽 모드 취소만 (다른 상태전환은 막음)
+            if (isColorPickingMode)
+            {
+                ExitColorPickMode();
+            }
+            else
+            {
+                if (currentState == AppState.Result) ChangeState(AppState.SelectBG);
+                else if (currentState == AppState.Capture) ChangeState(AppState.SelectBG);
+                else if (currentState == AppState.SelectBG) ResetToStart();
+                else ResetToStart();
+            }
         }
 
         // 관리자(Calibration) 모드에서는 마우스/키 입력을 상태전환에 사용하지 않음
@@ -167,18 +177,32 @@ public class AppStateManager : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Alpha5) || Input.GetKeyDown(KeyCode.Keypad5)) SelectBackgroundAndGoNext(4);
             if (Input.GetKeyDown(KeyCode.Alpha6) || Input.GetKeyDown(KeyCode.Keypad6)) SelectBackgroundAndGoNext(5);
 
-            // ── 조이스틱 / 방향키 네비게이션 ──
+            // ── 조이스틱 / 방향키 네비게이션 (쿨다운 일원화) ──
             if (_joystickCooldown > 0f) _joystickCooldown -= Time.deltaTime;
             float h = Input.GetAxisRaw("Horizontal");
             float v = Input.GetAxisRaw("Vertical");
 
-            if ((Mathf.Abs(h) > 0.5f || Mathf.Abs(v) > 0.5f) && _joystickCooldown <= 0f)
+            // 모든 입력(아날로그 + 키보드)을 하나의 게이트로 통합
+            // → 같은 물리 키가 axis와 GetKeyDown 양쪽으로 잡혀 두 번 이동되던 버그 차단
+            if (_joystickCooldown <= 0f)
             {
-                MoveJoystickCursor((h > 0 || v < 0) ? 1 : -1);
-                _joystickCooldown = 0.8f; // 0.8초 쿨다운으로 상향 (중복 입력 방지)
+                int navStep = 0;
+                bool axisActive = (Mathf.Abs(h) > 0.5f || Mathf.Abs(v) > 0.5f);
+                bool keyRight = Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D)
+                                || Input.GetKeyDown(KeyCode.DownArrow)  || Input.GetKeyDown(KeyCode.S);
+                bool keyLeft  = Input.GetKeyDown(KeyCode.LeftArrow)  || Input.GetKeyDown(KeyCode.A)
+                                || Input.GetKeyDown(KeyCode.UpArrow)    || Input.GetKeyDown(KeyCode.W);
+
+                if      (axisActive) navStep = (h > 0 || v < 0) ? 1 : -1;
+                else if (keyRight)   navStep = 1;
+                else if (keyLeft)    navStep = -1;
+
+                if (navStep != 0)
+                {
+                    MoveJoystickCursor(navStep);
+                    _joystickCooldown = 0.25f; // 4 nav/sec — 연타에도 안정적, 너무 느리지 않음
+                }
             }
-            else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S)) MoveJoystickCursor(1);
-            else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W)) MoveJoystickCursor(-1);
 
             // 조이스틱 버튼 (Fire1, Submit, Enter)
             if (Input.GetButtonDown("Submit") || Input.GetKeyDown(KeyCode.Return))
@@ -187,21 +211,15 @@ public class AppStateManager : MonoBehaviour
             }
         }
 
-        // 셀렉트 커서(붉은 박스) 부드러운 이동 및 Pulse 애니메이션
+        // 셀렉트 커서 — 버튼 정중앙에 padding 만큼 외곽으로 감싸서 lerp 이동
         if (currentState == AppState.SelectBG && selectCursor != null && bgButtons != null && bgButtons.Length > _currentJoystickIndex)
         {
             if (bgButtons[_currentJoystickIndex] != null)
             {
                 if (!selectCursor.gameObject.activeSelf) selectCursor.gameObject.SetActive(true);
                 selectCursor.SetAsLastSibling();
-                // 버튼과 물리적 상태를 100% 동일하게 맞춰서 밀림 원천 차단
-                selectCursor.anchorMin = bgButtons[_currentJoystickIndex].anchorMin;
-                selectCursor.anchorMax = bgButtons[_currentJoystickIndex].anchorMax;
-                selectCursor.pivot = bgButtons[_currentJoystickIndex].pivot;
-                selectCursor.position = Vector3.Lerp(selectCursor.position, bgButtons[_currentJoystickIndex].position, Time.deltaTime * 15f);
-                selectCursor.sizeDelta = Vector2.Lerp(selectCursor.sizeDelta, bgButtons[_currentJoystickIndex].sizeDelta, Time.deltaTime * 15f);
+                LerpCursor(selectCursor, bgButtons[_currentJoystickIndex], cursorPadding, Time.deltaTime * 15f);
 
-                // Pulse 애니메이션 (0.4 ~ 1.0)
                 CanvasGroup cg = selectCursor.GetComponent<CanvasGroup>();
                 if (cg == null) cg = selectCursor.gameObject.AddComponent<CanvasGroup>();
                 cg.alpha = Mathf.PingPong(Time.time * 2f, 0.6f) + 0.4f;
@@ -219,13 +237,26 @@ public class AppStateManager : MonoBehaviour
             float h = Input.GetAxisRaw("Horizontal");
             float v = Input.GetAxisRaw("Vertical");
 
-            if ((Mathf.Abs(h) > 0.5f || Mathf.Abs(v) > 0.5f) && _joystickCooldown <= 0f)
+            // 쿨다운 일원화 — axis와 keyboard를 한 게이트로
+            if (_joystickCooldown <= 0f)
             {
-                MoveResultCursor((h > 0 || v < 0) ? 1 : -1);
-                _joystickCooldown = 0.8f; // 0.8초 쿨다운
+                int navStep = 0;
+                bool axisActive = (Mathf.Abs(h) > 0.5f || Mathf.Abs(v) > 0.5f);
+                bool keyRight = Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D)
+                                || Input.GetKeyDown(KeyCode.DownArrow)  || Input.GetKeyDown(KeyCode.S);
+                bool keyLeft  = Input.GetKeyDown(KeyCode.LeftArrow)  || Input.GetKeyDown(KeyCode.A)
+                                || Input.GetKeyDown(KeyCode.UpArrow)    || Input.GetKeyDown(KeyCode.W);
+
+                if      (axisActive) navStep = (h > 0 || v < 0) ? 1 : -1;
+                else if (keyRight)   navStep = 1;
+                else if (keyLeft)    navStep = -1;
+
+                if (navStep != 0)
+                {
+                    MoveResultCursor(navStep);
+                    _joystickCooldown = 0.25f;
+                }
             }
-            else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S)) MoveResultCursor(1);
-            else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W)) MoveResultCursor(-1);
 
             if (Input.GetButtonDown("Submit") || Input.GetKeyDown(KeyCode.Return))
             {
@@ -238,14 +269,8 @@ public class AppStateManager : MonoBehaviour
                 {
                     if (!resultCursor.gameObject.activeSelf) resultCursor.gameObject.SetActive(true);
                     resultCursor.SetAsLastSibling();
-                    // 버튼과 물리적 상태를 100% 동일하게 맞춰서 밀림 원천 차단
-                    resultCursor.anchorMin = resultButtons[_currentResultIndex].anchorMin;
-                    resultCursor.anchorMax = resultButtons[_currentResultIndex].anchorMax;
-                    resultCursor.pivot = resultButtons[_currentResultIndex].pivot;
-                    resultCursor.position = Vector3.Lerp(resultCursor.position, resultButtons[_currentResultIndex].position, Time.deltaTime * 15f);
-                    resultCursor.sizeDelta = Vector2.Lerp(resultCursor.sizeDelta, resultButtons[_currentResultIndex].sizeDelta, Time.deltaTime * 15f);
+                    LerpCursor(resultCursor, resultButtons[_currentResultIndex], cursorPadding, Time.deltaTime * 15f);
 
-                    // Pulse 애니메이션 (0.4 ~ 1.0)
                     CanvasGroup cg = resultCursor.GetComponent<CanvasGroup>();
                     if (cg == null) cg = resultCursor.gameObject.AddComponent<CanvasGroup>();
                     cg.alpha = Mathf.PingPong(Time.time * 2f, 0.6f) + 0.4f;
@@ -282,8 +307,26 @@ public class AppStateManager : MonoBehaviour
     {
         if (currentState == newState) return;
 
-        // ── 이전 상태 정리 (비디오 정지 등) ──
+        AppState prevState = currentState;
+
+        // ── 이전 상태 정리 ──
         StopAllVideos();
+
+        // Calibration(관리자) 이탈: 픽 모드 강제 해제 + AdminPanel raycast 복원
+        // (픽 모드 중 ESC로 빠져나가면 CanvasGroup이 막힌 채 잔존하는 버그 방지)
+        if (prevState == AppState.Calibration && isColorPickingMode)
+        {
+            ExitColorPickMode();
+        }
+
+        // Capture/Processing 이탈: PhotoCaptureManager가 자체 Update에서 감지하지만
+        // 명시적으로 한 번 더 보장해 카운트다운 잔여 코루틴을 즉시 정리
+        if ((prevState == AppState.Capture || prevState == AppState.Processing) &&
+            (newState != AppState.Capture && newState != AppState.Processing) &&
+            photoCaptureManager != null)
+        {
+            photoCaptureManager.CancelCapture();
+        }
 
         currentState = newState;
         currentIdleTime = 0f;
@@ -304,9 +347,7 @@ public class AppStateManager : MonoBehaviour
                 
                 if (selectCursor != null && bgButtons != null && bgButtons.Length > 0 && bgButtons[0] != null)
                 {
-                    // 애니메이션 없이 즉각적으로 이동 및 크기 동기화
-                    selectCursor.position = bgButtons[0].position; 
-                    selectCursor.sizeDelta = bgButtons[0].sizeDelta;
+                    LerpCursor(selectCursor, bgButtons[0], cursorPadding, 1f); // 즉시 스냅
                 }
                 PlaySelectVideo();
                 break;
@@ -315,7 +356,7 @@ public class AppStateManager : MonoBehaviour
                 _currentResultIndex = 0; // 결과 화면 버튼 포커스 초기화
                 if (resultCursor != null && resultButtons != null && resultButtons.Length > 0 && resultButtons[0] != null)
                 {
-                    resultCursor.position = resultButtons[0].position;
+                    LerpCursor(resultCursor, resultButtons[0], cursorPadding, 1f); // 즉시 스냅
                 }
                 LoadResultBackground();
                 break;
@@ -323,6 +364,42 @@ public class AppStateManager : MonoBehaviour
     }
 
     /// <summary>모든 비디오 플레이어를 정지시킨다.</summary>
+    /// <summary>
+    /// target 버튼의 실제 월드 코너를 읽어 cursor를 padding 만큼 외곽으로 감싸도록 lerp 이동.
+    /// world position + sizeDelta로 제어. 커서 앵커/피벗이 비중앙이면 자동 center로 보정.
+    /// t = 1 이면 즉시 스냅.
+    /// </summary>
+    private static void LerpCursor(RectTransform cursor, RectTransform target, float padding, float t)
+    {
+        // ★ 안전 가드: 커서가 stretch 앵커거나 비중앙 피벗이면 즉시 보정
+        //   (씬에 옛 커서가 남아있어도 동작 보장)
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        if (cursor.anchorMin != center || cursor.anchorMax != center)
+        {
+            cursor.anchorMin = cursor.anchorMax = center;
+        }
+        if (cursor.pivot != center)
+        {
+            cursor.pivot = center;
+        }
+
+        Vector3[] corners = new Vector3[4];
+        target.GetWorldCorners(corners); // [0]=BL [1]=TL [2]=TR [3]=BR
+        Vector3 worldCenter = (corners[0] + corners[2]) * 0.5f;
+        float worldW = (corners[3] - corners[0]).magnitude;
+        float worldH = (corners[1] - corners[0]).magnitude;
+
+        float parentScale = (cursor.parent != null) ? cursor.parent.lossyScale.x : 1f;
+        if (parentScale < 0.0001f) parentScale = 1f;
+
+        Vector2 targetSize = new Vector2(
+            worldW / parentScale + padding * 2f,
+            worldH / parentScale + padding * 2f);
+
+        cursor.position  = Vector3.Lerp(cursor.position,  worldCenter, t);
+        cursor.sizeDelta = Vector2.Lerp(cursor.sizeDelta, targetSize,  t);
+    }
+
     private void StopAllVideos()
     {
         if (standbyVideoPlayer != null && standbyVideoPlayer.isPlaying)
@@ -362,22 +439,74 @@ public class AppStateManager : MonoBehaviour
 
     public bool isColorPickingMode = false;
 
-    public void ToggleColorPickMode()
+    /// <summary>스포이드 모드 진입 (1회성). 버튼 OnClick 에서 호출. 토글 아님.</summary>
+    public void EnterColorPickMode()
     {
-        isColorPickingMode = !isColorPickingMode;
-        Debug.Log($"[Admin] 💧 색상 추출(스포이드) 모드: {(isColorPickingMode ? "ON" : "OFF")}");
-        
-        // 텍스트 시각적 피드백 (찾아서 컬러/텍스트 변경)
+        if (isColorPickingMode) return;
+        isColorPickingMode = true;
+        Debug.Log("[Admin] 💧 스포이드 모드 진입 — 웹캠을 클릭하면 색상이 추출되고 자동 종료됩니다.");
+        UpdateColorPickButtonUI();
+        SetAdminPickModeOverlay(true); // 슬라이더/버튼 클릭 차단 + 포그라운드 숨김
+    }
+
+    /// <summary>스포이드 모드 종료. 추출 1회 후 자동 호출 또는 외부 강제 종료.</summary>
+    public void ExitColorPickMode()
+    {
+        if (!isColorPickingMode) return;
+        isColorPickingMode = false;
+        Debug.Log("[Admin] 💧 스포이드 모드 종료.");
+        UpdateColorPickButtonUI();
+        SetAdminPickModeOverlay(false);
+    }
+
+    /// <summary>
+    /// 픽 모드 동안 AdminPanel의 모든 자식 raycast 차단(슬라이더 오작동 방지)하고
+    /// 포그라운드 프레임을 숨겨서 웹캠을 깨끗하게 클릭 가능하게 만든다.
+    /// 종료 시 모두 원상복구.
+    /// </summary>
+    private void SetAdminPickModeOverlay(bool pickActive)
+    {
+        // 1) AdminPanel의 raycast 일괄 제어 — CanvasGroup 으로 한 번에 차단/복구
         if (adminPanel != null)
         {
-            var tmp = adminPanel.transform.Find("ColorPickBtn")?.GetComponentInChildren<TMPro.TextMeshProUGUI>();
-            if (tmp != null)
+            var cg = adminPanel.GetComponent<CanvasGroup>();
+            if (cg == null) cg = adminPanel.AddComponent<CanvasGroup>();
+            cg.blocksRaycasts = !pickActive;
+            cg.interactable   = !pickActive;
+        }
+
+        // 2) 포그라운드 프레임 숨김/복구 — 웹캠 위 장식 프레임이 시야 가림 방지
+        var fg = OverlayBGManager.Instance?.foregroundImageDisplay;
+        if (fg != null)
+        {
+            if (pickActive)
             {
-                tmp.text = isColorPickingMode ? "추출 중... (클릭)" : "스포이드 (색상 추출)";
-                tmp.color = isColorPickingMode ? new Color(1f, 0.4f, 0.4f) : Color.white;
+                // 진입: 현재 상태 먼저 기억 → 그 다음 숨김
+                _pickModeForegroundWasVisible = fg.gameObject.activeSelf;
+                fg.gameObject.SetActive(false);
+            }
+            else
+            {
+                // 종료: 원래 상태로 복구
+                fg.gameObject.SetActive(_pickModeForegroundWasVisible);
             }
         }
     }
+    private bool _pickModeForegroundWasVisible = false;
+
+    private void UpdateColorPickButtonUI()
+    {
+        if (adminPanel == null) return;
+        var tmp = adminPanel.transform.Find("ColorPickBtn")?.GetComponentInChildren<TMPro.TextMeshProUGUI>();
+        if (tmp != null)
+        {
+            tmp.text  = isColorPickingMode ? "추출 중... (웹캠 클릭)" : "스포이드 (색상 추출)";
+            tmp.color = isColorPickingMode ? new Color(1f, 0.4f, 0.4f) : Color.white;
+        }
+    }
+
+    /// <summary>구버전 버튼 바인딩 호환용 — 항상 Enter 동작 (one-shot).</summary>
+    public void ToggleColorPickMode() => EnterColorPickMode();
 
     public void OpenStreamingAssetsFolder()
     {

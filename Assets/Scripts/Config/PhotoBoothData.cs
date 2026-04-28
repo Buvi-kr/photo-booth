@@ -99,6 +99,15 @@ public class CameraConfig
     /// <summary>요청 FPS (권장: 30 또는 60).</summary>
     [JsonProperty("requestedFPS")]
     public int RequestedFPS { get; set; } = 30;
+
+    /// <summary>
+    /// 방향 강제 설정. "auto" = 카메라 신호 비율 따름(기본),
+    /// "landscape" = 강제 가로 (원본 디자인 사이즈),
+    /// "portrait"  = 강제 세로 (가운데 9:16 영역).
+    /// 자동 감지가 잘못될 때 운영자가 명시적으로 덮어쓸 때만 사용.
+    /// </summary>
+    [JsonProperty("orientationOverride")]
+    public string OrientationOverride { get; set; } = "auto";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -509,7 +509,7 @@ public class MasterSetupBuilder
         CreateButton(adminPanel, "ColorPickBtn", "스포이드 (색상 추출)",
             new Color(0.2f, 0.6f, 0.3f), Color.white,
             new Vector2(0, 1), new Vector2(leftX, startY - gap * idx++), new Vector2(250, 35),
-            appState, "ToggleColorPickMode");
+            appState, "EnterColorPickMode"); // 1회성 진입 (토글 아님 → 추출 후 자동 종료)
         count++;
 
         // --- 돋보기 패널 (Magnifier) 생성 ---
@@ -891,14 +891,14 @@ public class MasterSetupBuilder
             cursorObj.transform.SetAsLastSibling();
 
             RectTransform cRT = cursorObj.AddComponent<RectTransform>();
-            // 버튼과 100% 동일하게 겹쳐지도록 생성
-            cRT.anchorMin = validButtons[0].anchorMin;
-            cRT.anchorMax = validButtons[0].anchorMax;
-            cRT.pivot = validButtons[0].pivot;
-            // 좌우 15px씩(총 30), 상단 15px/하단 5px(총 20) 늘림
-            cRT.sizeDelta = new Vector2(validButtons[0].sizeDelta.x + 30, validButtons[0].sizeDelta.y + 20);
-            // 상하 불균형(15 vs 5) 보정을 위해 위로 5px 이동
-            cRT.anchoredPosition = new Vector2(0, 5);
+            // 앵커/피벗 중앙 고정 — 결과 버튼이 bottom-center 피벗(0.5, 0)을 가지면
+            // 그걸 따라했을 때 커서 position(=버튼 worldCenter)이 커서 BOTTOM에 매핑되어
+            // 위쪽 절반만 그려지는 버그가 발생. AppStateManager.LerpCursor가 worldCenter+sizeDelta로
+            // 제어하므로 무조건 center anchor/pivot 이어야 함.
+            cRT.anchorMin = cRT.anchorMax = new Vector2(0.5f, 0.5f);
+            cRT.pivot = new Vector2(0.5f, 0.5f);
+            cRT.position  = validButtons[0].position;
+            cRT.sizeDelta = validButtons[0].sizeDelta + new Vector2(28f, 28f);
 
             Image cImg = cursorObj.AddComponent<Image>();
             cImg.color = new Color(0f, 0f, 0f, 0f); // 투명하게

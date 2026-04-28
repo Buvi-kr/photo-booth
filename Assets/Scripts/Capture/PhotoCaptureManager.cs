@@ -20,6 +20,7 @@ public class PhotoCaptureManager : MonoBehaviour
     public string saveFolderName = "MyPhotoBooth";
 
     private bool isCapturing = false;
+    private Coroutine _captureCoroutine;
 
     private void Start()
     {
@@ -36,11 +37,19 @@ public class PhotoCaptureManager : MonoBehaviour
 
         if (_lastState != appState.CurrentState)
         {
+            AppState prev = _lastState;
             _lastState = appState.CurrentState;
+
+            // Capture 진입 시 0.5초 잔여 입력 차단 쿨다운
             if (_lastState == AppState.Capture)
-            {
                 _captureCooldown = 0.5f;
-            }
+
+            // Capture/Processing → 그 외 상태로 빠져나갈 때(ESC, 관리자모드 등) 진행 중 촬영 강제 취소
+            // 이전 버그: 카운트다운 중 빠져나갔다가 돌아오면 잔여 코루틴이 즉시 찍어버림
+            bool wasCaptureFlow = (prev == AppState.Capture || prev == AppState.Processing);
+            bool nowOutOfFlow   = (_lastState != AppState.Capture && _lastState != AppState.Processing);
+            if (wasCaptureFlow && nowOutOfFlow)
+                CancelCapture();
         }
 
         if (_captureCooldown > 0f) _captureCooldown -= Time.deltaTime;
@@ -64,7 +73,34 @@ public class PhotoCaptureManager : MonoBehaviour
             return;
         }
 
-        StartCoroutine(CaptureRoutine());
+        _captureCoroutine = StartCoroutine(CaptureRoutine());
+    }
+
+    /// <summary>
+    /// 진행 중인 촬영 코루틴을 즉시 중단하고 UI/플래그를 원상복구.
+    /// ESC/관리자모드 진입 등 Capture 흐름에서 이탈할 때 자동 호출.
+    /// </summary>
+    public void CancelCapture()
+    {
+        if (_captureCoroutine != null)
+        {
+            StopCoroutine(_captureCoroutine);
+            _captureCoroutine = null;
+            Debug.Log("[PhotoCapture] 진행 중인 촬영 취소됨.");
+        }
+
+        if (timerText != null) timerText.text = "";
+        if (flashScreen != null)
+        {
+            flashScreen.color = new Color(1, 1, 1, 0);
+            flashScreen.gameObject.SetActive(false);
+        }
+        if (uiToHide != null)
+        {
+            foreach (GameObject ui in uiToHide)
+                if (ui != null) ui.SetActive(true);
+        }
+        isCapturing = false;
     }
 
     private IEnumerator CaptureRoutine()
@@ -105,6 +141,7 @@ public class PhotoCaptureManager : MonoBehaviour
             if (ui != null) ui.SetActive(true);
 
         isCapturing = false;
+        _captureCoroutine = null;
 
         AppStateManager.Instance.ChangeState(AppState.Result);
     }
