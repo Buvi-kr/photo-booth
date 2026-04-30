@@ -43,46 +43,11 @@ public class PhotoCaptureManager : MonoBehaviour
             ConfigureTimerVisual();
         }
 
-        // ① Inspector 명시 목록 비활성화
+        // Inspector 명시 목록만 비활성화 (자동 탐색은 화면 레이아웃 충돌 위험으로 제거됨)
         if (uiToHidePermanently != null)
         {
             foreach (var go in uiToHidePermanently)
                 if (go != null) go.SetActive(false);
-        }
-
-        // ② 자동 탐색: 흔한 촬영 버튼/레이어 이름 매칭 → 운영자가 인스펙터 빠뜨려도 안전
-        AutoHideLegacyCaptureUI();
-    }
-
-    /// <summary>
-    /// 자동 흐름으로 바뀌면서 불필요해진 옛 UI(촬영하기 버튼, 그 부모 패널)을
-    /// 이름 기반으로 찾아 비활성화. 부모만 꺼져도 자식(CaptureBtn 등) 같이 꺼짐.
-    /// </summary>
-    private void AutoHideLegacyCaptureUI()
-    {
-        string[] candidateNames = {
-            "BottomPanel", "CaptureBottom", "Capture_Bottom",
-            "CaptureBtn",  "TakePhotoBtn", "촬영하기",
-            "CaptureButton", "TakeBtn"
-        };
-
-        // 비활성 오브젝트도 포함 검색
-        var allRects = FindObjectsOfType<RectTransform>(true);
-        foreach (var rt in allRects)
-        {
-            string n = rt.gameObject.name;
-            for (int i = 0; i < candidateNames.Length; i++)
-            {
-                if (n.Equals(candidateNames[i], System.StringComparison.OrdinalIgnoreCase))
-                {
-                    if (rt.gameObject.activeSelf)
-                    {
-                        rt.gameObject.SetActive(false);
-                        Debug.Log($"[PhotoCapture] 자동 흐름 전환 → '{n}' 영구 비활성화");
-                    }
-                    break;
-                }
-            }
         }
     }
 
