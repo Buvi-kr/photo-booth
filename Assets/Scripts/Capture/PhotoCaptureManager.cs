@@ -22,18 +22,12 @@ public class PhotoCaptureManager : MonoBehaviour
     [Header("타이머 설정")]
     [Tooltip("카운트다운 길이 (초). 권장 5~10")]
     [Range(3, 15)] public int countdownSeconds = 8;
-    [Tooltip("Capture 화면 진입 후 자동 카운트다운 시작 (촬영하기 버튼/Enter/Space 안 눌러도 됨)")]
-    public bool autoStartOnEnter = false;
-    [Tooltip("진입 후 카운트다운 시작까지 준비 시간 (초). autoStartOnEnter=true 일 때만 사용")]
-    public float autoStartDelay = 0.5f;
 
     [Header("저장 설정")]
     public string saveFolderName = "MyPhotoBooth";
 
     private bool isCapturing = false;
     private Coroutine _captureCoroutine;
-    private bool _autoStartArmed = false;
-    private float _autoStartTimer = 0f;
 
     private void Start()
     {
@@ -135,15 +129,12 @@ public class PhotoCaptureManager : MonoBehaviour
             AppState prev = _lastState;
             _lastState = appState.CurrentState;
 
-            // Capture 진입 시 0.5초 잔여 입력 차단 쿨다운 + 자동 시작 무장
+            // Capture 진입 시 잔여 입력 차단 쿨다운 (SelectBG에서 누른 Enter/Space가
+            // 그대로 Capture에 새는 것 방지. SelectBG→Capture 전환은 0.8초 후이지만
+            // 사용자가 키를 길게 누르거나 빠르게 두 번 눌렀을 때를 대비해 1.0초 보장.)
             if (_lastState == AppState.Capture)
             {
-                _captureCooldown = 0.5f;
-                if (autoStartOnEnter)
-                {
-                    _autoStartArmed = true;
-                    _autoStartTimer = autoStartDelay;
-                }
+                _captureCooldown = 1.0f;
             }
 
             // Capture/Processing → 그 외 상태로 빠져나갈 때(ESC, 관리자모드 등) 진행 중 촬영 강제 취소
@@ -151,23 +142,11 @@ public class PhotoCaptureManager : MonoBehaviour
             bool nowOutOfFlow   = (_lastState != AppState.Capture && _lastState != AppState.Processing);
             if (wasCaptureFlow && nowOutOfFlow)
             {
-                _autoStartArmed = false; // 이탈 시 자동 시작도 취소
                 CancelCapture();
             }
         }
 
         if (_captureCooldown > 0f) _captureCooldown -= Time.deltaTime;
-
-        // 자동 시작: Capture 상태이고 쿨다운 끝났으면 delay 후 한 번만 발동
-        if (_autoStartArmed && appState.CurrentState == AppState.Capture && _captureCooldown <= 0f)
-        {
-            _autoStartTimer -= Time.deltaTime;
-            if (_autoStartTimer <= 0f && !isCapturing)
-            {
-                _autoStartArmed = false;
-                TakePhoto();
-            }
-        }
 
         // Enter / Space 키로 촬영 시작 (수동 트리거)
         bool pressedTrigger = Input.GetKeyDown(KeyCode.Return)
@@ -177,7 +156,6 @@ public class PhotoCaptureManager : MonoBehaviour
         {
             if (_captureCooldown <= 0f && !isCapturing)
             {
-                _autoStartArmed = false;
                 TakePhoto();
             }
         }
@@ -225,7 +203,6 @@ public class PhotoCaptureManager : MonoBehaviour
                 if (ui != null) ui.SetActive(true);
         }
         isCapturing = false;
-        _autoStartArmed = false;
     }
 
     private IEnumerator CaptureRoutine()
