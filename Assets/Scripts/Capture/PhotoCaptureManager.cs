@@ -22,9 +22,9 @@ public class PhotoCaptureManager : MonoBehaviour
     [Header("타이머 설정")]
     [Tooltip("카운트다운 길이 (초). 권장 5~10")]
     [Range(3, 15)] public int countdownSeconds = 8;
-    [Tooltip("Capture 화면 진입 후 자동 카운트다운 시작 (촬영하기 버튼 안 눌러도 됨)")]
-    public bool autoStartOnEnter = true;
-    [Tooltip("진입 후 카운트다운 시작까지 준비 시간 (초)")]
+    [Tooltip("Capture 화면 진입 후 자동 카운트다운 시작 (촬영하기 버튼/Enter/Space 안 눌러도 됨)")]
+    public bool autoStartOnEnter = false;
+    [Tooltip("진입 후 카운트다운 시작까지 준비 시간 (초). autoStartOnEnter=true 일 때만 사용")]
     public float autoStartDelay = 0.5f;
 
     [Header("저장 설정")]
@@ -169,10 +169,13 @@ public class PhotoCaptureManager : MonoBehaviour
             }
         }
 
-        // (기존) Enter 키 백업 — autoStart 비활성 환경 또는 디버그용
-        if (Input.GetKeyDown(KeyCode.Return) && appState.CurrentState == AppState.Capture)
+        // Enter / Space 키로 촬영 시작 (수동 트리거)
+        bool pressedTrigger = Input.GetKeyDown(KeyCode.Return)
+                            || Input.GetKeyDown(KeyCode.KeypadEnter)
+                            || Input.GetKeyDown(KeyCode.Space);
+        if (pressedTrigger && appState.CurrentState == AppState.Capture)
         {
-            if (_captureCooldown <= 0f)
+            if (_captureCooldown <= 0f && !isCapturing)
             {
                 _autoStartArmed = false;
                 TakePhoto();
