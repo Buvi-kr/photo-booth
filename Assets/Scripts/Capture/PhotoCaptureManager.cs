@@ -211,6 +211,14 @@ public class PhotoCaptureManager : MonoBehaviour
 
         AppStateManager.Instance.ChangeState(AppState.Processing);
 
+        // 촬영 시작 즉시 UI 숨김 (촬영하기 버튼/하단 패널 등)
+        // → 카운트다운 중 깨끗한 미리보기 + 촬영 시 어차피 숨겨야 할 UI
+        if (uiToHide != null)
+        {
+            foreach (GameObject ui in uiToHide)
+                if (ui != null) ui.SetActive(false);
+        }
+
         for (int i = countdownSeconds; i > 0; i--)
         {
             if (timerText != null)
@@ -223,9 +231,6 @@ public class PhotoCaptureManager : MonoBehaviour
         }
 
         if (timerText != null) timerText.text = "";
-
-        foreach (GameObject ui in uiToHide)
-            if (ui != null) ui.SetActive(false);
 
         // 미리보기에서 보이는 화면 그대로 캡처 (셰이더/크롭/회전이 이미 적용된 상태)
         yield return new WaitForEndOfFrame();
@@ -244,8 +249,12 @@ public class PhotoCaptureManager : MonoBehaviour
         if (QRServerManager.Instance != null)
             QRServerManager.Instance.GenerateQRCodeForFile(savedFileName);
 
-        foreach (GameObject ui in uiToHide)
-            if (ui != null) ui.SetActive(true);
+        // Result 진입 직전 UI 복원 (촬영하기 버튼/하단 패널 등 다시 표시)
+        if (uiToHide != null)
+        {
+            foreach (GameObject ui in uiToHide)
+                if (ui != null) ui.SetActive(true);
+        }
 
         isCapturing = false;
         _captureCoroutine = null;
