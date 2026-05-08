@@ -101,6 +101,14 @@ public class AppStateManager : MonoBehaviour
     private Coroutine _blinkCoroutine;
     private float _standbyCooldown = 0f;
 
+    // ── 연타 방지 (어린이 키보드 연타로 화면 깜빡임/멈춤 방지) ──
+    [Tooltip("ChangeState 호출 직후 N초 동안 다음 상태 전환 차단 (연타 방지). 0.3~0.5 추천")]
+    [Range(0f, 1f)] public float stateChangeCooldownSeconds = 0.4f;
+    [Tooltip("Enter/Submit/ESC 등 트리거 키 연타 방지 쿨다운. 0.2~0.4 추천")]
+    [Range(0f, 1f)] public float inputTriggerCooldownSeconds = 0.3f;
+    private float _stateChangeCooldown = 0f;
+    private float _inputTriggerCooldown = 0f;
+
     private void Awake()
     {
         if (Instance == null) { Instance = this; DontDestroyOnLoad(gameObject); }
@@ -144,11 +152,17 @@ public class AppStateManager : MonoBehaviour
     private void Update()
     {
         if (_standbyCooldown > 0f) _standbyCooldown -= Time.deltaTime;
+        if (_stateChangeCooldown > 0f) _stateChangeCooldown -= Time.deltaTime;
+        if (_inputTriggerCooldown > 0f) _inputTriggerCooldown -= Time.deltaTime;
+
         if (Input.GetKey(KeyCode.LeftControl) && Input.GetKey(KeyCode.LeftAlt) && Input.GetKeyDown(KeyCode.S))
             ToggleAdminMode();
 
-        if (Input.GetKeyDown(KeyCode.Escape))
+        // ESC: 트리거 쿨다운 통과해야만 처리 (연타로 인한 다중 ChangeState 큐잉 방지)
+        if (Input.GetKeyDown(KeyCode.Escape) && _inputTriggerCooldown <= 0f)
         {
+            _inputTriggerCooldown = inputTriggerCooldownSeconds;
+
             // 픽 모드 중이면 ESC 는 픽 모드 취소만 (다른 상태전환은 막음)
             if (isColorPickingMode)
             {
@@ -170,12 +184,23 @@ public class AppStateManager : MonoBehaviour
 
         if (currentState == AppState.SelectBG)
         {
-            if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1)) SelectBackgroundAndGoNext(0);
-            if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2)) SelectBackgroundAndGoNext(1);
-            if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3)) SelectBackgroundAndGoNext(2);
-            if (Input.GetKeyDown(KeyCode.Alpha4) || Input.GetKeyDown(KeyCode.Keypad4)) SelectBackgroundAndGoNext(3);
-            if (Input.GetKeyDown(KeyCode.Alpha5) || Input.GetKeyDown(KeyCode.Keypad5)) SelectBackgroundAndGoNext(4);
-            if (Input.GetKeyDown(KeyCode.Alpha6) || Input.GetKeyDown(KeyCode.Keypad6)) SelectBackgroundAndGoNext(5);
+            // 숫자 키 직접 선택 — 트리거 쿨다운 통과해야 처리
+            if (_inputTriggerCooldown <= 0f)
+            {
+                int directIdx = -1;
+                if      (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1)) directIdx = 0;
+                else if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2)) directIdx = 1;
+                else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3)) directIdx = 2;
+                else if (Input.GetKeyDown(KeyCode.Alpha4) || Input.GetKeyDown(KeyCode.Keypad4)) directIdx = 3;
+                else if (Input.GetKeyDown(KeyCode.Alpha5) || Input.GetKeyDown(KeyCode.Keypad5)) directIdx = 4;
+                else if (Input.GetKeyDown(KeyCode.Alpha6) || Input.GetKeyDown(KeyCode.Keypad6)) directIdx = 5;
+
+                if (directIdx >= 0)
+                {
+                    _inputTriggerCooldown = inputTriggerCooldownSeconds;
+                    SelectBackgroundAndGoNext(directIdx);
+                }
+            }
 
             // ── 조이스틱 / 방향키 네비게이션 (쿨다운 일원화) ──
             if (_joystickCooldown > 0f) _joystickCooldown -= Time.deltaTime;
@@ -204,9 +229,11 @@ public class AppStateManager : MonoBehaviour
                 }
             }
 
-            // 조이스틱 버튼 (Fire1, Submit, Enter)
-            if (Input.GetButtonDown("Submit") || Input.GetKeyDown(KeyCode.Return))
+            // 조이스틱 버튼 (Fire1, Submit, Enter) — 트리거 쿨다운 통과해야 처리
+            if ((Input.GetButtonDown("Submit") || Input.GetKeyDown(KeyCode.Return))
+                && _inputTriggerCooldown <= 0f)
             {
+                _inputTriggerCooldown = inputTriggerCooldownSeconds;
                 SelectBackgroundAndGoNext(_currentJoystickIndex);
             }
         }
@@ -258,8 +285,11 @@ public class AppStateManager : MonoBehaviour
                 }
             }
 
-            if (Input.GetButtonDown("Submit") || Input.GetKeyDown(KeyCode.Return))
+            // Result 버튼 실행 — 트리거 쿨다운 통과해야 처리 (재촬영/홈 연타 방지)
+            if ((Input.GetButtonDown("Submit") || Input.GetKeyDown(KeyCode.Return))
+                && _inputTriggerCooldown <= 0f)
             {
+                _inputTriggerCooldown = inputTriggerCooldownSeconds;
                 ExecuteResultButton();
             }
 
@@ -306,6 +336,17 @@ public class AppStateManager : MonoBehaviour
     public void ChangeState(AppState newState)
     {
         if (currentState == newState) return;
+
+        // 연타 방지 게이트: 직전 상태 전환으로부터 stateChangeCooldownSeconds 미만이면 무시
+        // (어린이가 Enter/ESC 연타로 화면을 덜덜 떨게 하거나 코루틴이 꼬여 멈추는 현상 차단)
+        // ⚠️ Start() 의 초기 강제 진입은 _stateChangeCooldown=0 이므로 영향 없음
+        if (_stateChangeCooldown > 0f)
+        {
+            // Debug 로그는 너무 많이 찍히면 부담이라 끔. 필요시 활성화:
+            // Debug.Log($"[AppState] 연타 차단: {currentState} → {newState} (남은 {_stateChangeCooldown:F2}s)");
+            return;
+        }
+        _stateChangeCooldown = stateChangeCooldownSeconds;
 
         AppState prevState = currentState;
 

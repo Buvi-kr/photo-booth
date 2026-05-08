@@ -26,6 +26,14 @@ public class PhotoCaptureManager : MonoBehaviour
     [Header("저장 설정")]
     public string saveFolderName = "MyPhotoBooth";
 
+    [Header("자동 정리 설정 (무인 키오스크 장기 운영용)")]
+    [Tooltip("이 일수보다 오래된 사진을 자동 삭제. 0=비활성")]
+    [Range(0, 365)] public int autoCleanupAfterDays = 30;
+    [Tooltip("아무리 오래돼도 최근 N장은 무조건 보관 (QR 스캔 늦게 한 사용자 보호)")]
+    [Range(0, 1000)] public int minKeepCount = 50;
+    [Tooltip("앱 시작 시 자동 정리 코루틴 실행 여부")]
+    public bool runCleanupOnStart = true;
+
     private bool isCapturing = false;
     private Coroutine _captureCoroutine;
 
@@ -43,6 +51,87 @@ public class PhotoCaptureManager : MonoBehaviour
             foreach (var go in uiToHidePermanently)
                 if (go != null) go.SetActive(false);
         }
+
+        // 무인 키오스크 장기 운영 → 오래된 사진 자동 정리 (디스크 보호)
+        if (runCleanupOnStart && autoCleanupAfterDays > 0)
+        {
+            StartCoroutine(AutoCleanupRoutine());
+        }
+    }
+
+    /// <summary>
+    /// 저장 폴더의 오래된 사진을 자동 삭제하는 코루틴.
+    /// 이중 안전장치:
+    ///   ① autoCleanupAfterDays 일수 초과한 파일만 대상
+    ///   ② 가장 최근 minKeepCount 장은 무조건 보호 (QR 늦게 스캔한 사용자 보호)
+    /// 매 20개 파일마다 yield로 프레임 양보 → 시작 시 끊김 방지.
+    /// </summary>
+    private IEnumerator AutoCleanupRoutine()
+    {
+        // 시작 직후 다른 초기화에 양보
+        yield return null;
+        yield return null;
+
+        string folderPath = Path.Combine(Application.dataPath, saveFolderName);
+        if (!Directory.Exists(folderPath))
+        {
+            Debug.Log("[PhotoCapture/Cleanup] 저장 폴더 없음 → 정리 건너뜀.");
+            yield break;
+        }
+
+        DirectoryInfo dir = null;
+        FileInfo[] files = null;
+        try
+        {
+            dir   = new DirectoryInfo(folderPath);
+            files = dir.GetFiles("Photo_*.jpg");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[PhotoCapture/Cleanup] 폴더 읽기 실패: {e.Message}");
+            yield break;
+        }
+
+        if (files == null || files.Length == 0) yield break;
+        if (files.Length <= minKeepCount)
+        {
+            Debug.Log($"[PhotoCapture/Cleanup] 파일 {files.Length}장 ≤ 최소 보관 {minKeepCount}장 → 정리 건너뜀.");
+            yield break;
+        }
+
+        // 최신순 정렬 (앞쪽 = 최신, 뒤쪽 = 오래됨)
+        System.Array.Sort(files, (a, b) => b.LastWriteTime.CompareTo(a.LastWriteTime));
+
+        System.DateTime cutoff = System.DateTime.Now.AddDays(-autoCleanupAfterDays);
+        int deleted   = 0;
+        int processed = 0;
+
+        // 최근 minKeepCount 장은 건너뛰고, 그 뒤부터 cutoff 검사
+        for (int i = minKeepCount; i < files.Length; i++)
+        {
+            if (files[i].LastWriteTime < cutoff)
+            {
+                try
+                {
+                    files[i].Delete();
+                    deleted++;
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"[PhotoCapture/Cleanup] 삭제 실패 ({files[i].Name}): {e.Message}");
+                }
+            }
+
+            // 매 20개마다 프레임 양보 (대량 정리 시 끊김 방지)
+            processed++;
+            if (processed % 20 == 0) yield return null;
+        }
+
+        if (deleted > 0)
+            Debug.Log($"[PhotoCapture/Cleanup] ✅ {deleted}장 삭제 완료 " +
+                      $"(보관 기간 {autoCleanupAfterDays}일, 최소 유지 {minKeepCount}장, 전체 {files.Length}장 중)");
+        else
+            Debug.Log($"[PhotoCapture/Cleanup] 정리 대상 없음 (전체 {files.Length}장, 모두 {autoCleanupAfterDays}일 이내).");
     }
 
     /// <summary>
