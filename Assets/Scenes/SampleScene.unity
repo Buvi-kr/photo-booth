@@ -10010,7 +10010,9 @@ MonoBehaviour:
   flashScreen: {fileID: 507014148}
   resultPreview: {fileID: 1790697310}
   uiToHide:
-  - {fileID: 2142093846}
+  - {fileID: 1617776824}
+  uiToHidePermanently: []
+  countdownSeconds: 8
   saveFolderName: MyPhotoBooth
 --- !u!1 &1148460406
 GameObject:

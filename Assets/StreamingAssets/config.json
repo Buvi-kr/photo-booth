@@ -1,6 +1,6 @@
 ﻿{
   "global": {
-    "targetColor": "#8DE420",
+    "targetColor": "#D5DBE0",
     "masterSensitivity": 19.29211,
     "masterSmoothness": 0.7655561,
     "masterSpillRemoval": 100.0,
@@ -21,7 +21,8 @@
     "deviceName": "",
     "requestedWidth": 1920,
     "requestedHeight": 1080,
-    "requestedFPS": 30
+    "requestedFPS": 30,
+    "orientationOverride": "auto"
   },
   "backgrounds": [
     {

@@ -905,7 +905,13 @@ PlayerSettings:
   XboxOneOverrideIdentityName: 
   XboxOneOverrideIdentityPublisher: 
   vrEditorSettings: {}
-  cloudServicesEnabled: {}
+  cloudServicesEnabled:
+    Build: 0
+    Game Performance: 0
+    Legacy Analytics: 0
+    Purchasing: 0
+    UDP: 0
+    Unity Ads: 0
   luminIcon:
     m_Name: 
     m_ModelFolderPath: 
@@ -927,10 +933,10 @@ PlayerSettings:
   captureStartupLogs: {}
   activeInputHandler: 2
   windowsGamepadBackendHint: 0
-  cloudProjectId: 6b25502c-9e50-4392-aa1e-f2da7e24cdba
+  cloudProjectId: 59ed3de5-908f-4ff2-afc1-ac7a64f9bf3f
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: PhotoBooth_Kiosk
+  projectName: PhotoBooth_Kiosk (1)
   organizationId: cje0173
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0
