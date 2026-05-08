@@ -75,11 +75,16 @@ graph TD
 
 ## 🔜 향후 업데이트 계획 (Roadmap)
 
+### ✅ [2026.05.08 완료] 무인 키오스크 장기 운영 안정화
+*   ✅ **자동 사진 정리** (30일 보관 + 최소 50장 유지, 코루틴 비동기)
+*   ✅ **연타 방지 시스템** (입력/상태 변경 2층 방어)
+*   ✅ **촬영 시작 시 즉시 UI 숨김** (깨끗한 카운트다운 미리보기)
+*   ✅ **수동 트리거 강화** (버튼/Enter/Space 명시 트리거)
+
 ### ✅ [2026.04.30 완료] 기본 자동 촬영 흐름
-*   ✅ **촬영하기 버튼 및 하단 회색 레이어 제거** (자동 감지 + 수동 배열 지원)
-*   ✅ **배경 선택 직후 자동 8초 카운트다운 시작** (클릭 후 즉시 시작)
 *   ✅ **타이머 가독성 혁신** (네온 스타일 outline + 색상 진행)
 *   ✅ **상태 관리 개선** (ESC 시 정상 정리, 코루틴 추적)
+*   ✅ **카운트다운 펄스 애니메이션** (1.5x → 1.0x EaseOut)
 
 ### 🔲 향후 개선 계획 (가능한 업그레이드)
 
@@ -97,6 +102,72 @@ graph TD
 ---
 
 ## 📅 업데이트 로그 (Release Notes)
+
+### [2026.05.08] 무인 키오스크 장기 운영 안정화 (Long-Term Kiosk Reliability)
+**주요 성과:** 수개월~수년 무인 운영을 위한 자동 디스크 관리 + 어린이 연타 공격 방어 시스템 도입. 운영자 개입 없이도 안정적인 장기 가동 환경 구축.
+
+*   **자동 사진 정리 시스템 (Auto-Cleanup):**
+    *   **이중 안전장치:** 보관 일수(`autoCleanupAfterDays`) + 최소 보관 개수(`minKeepCount`) 동시 적용
+        *   30일 지난 사진만 삭제 (기본값)
+        *   최근 50장은 무조건 보관 (QR 늦게 스캔하는 사용자 보호)
+        *   둘 다 만족해야 삭제 → 데이터 손실 위험 최소화
+    *   **비동기 코루틴 실행:** 앱 시작 시 코루틴으로 정리하여 부팅 끊김 없음
+        *   매 20개 파일 처리마다 `yield` → 1000장 정리도 프레임 부담 X
+        *   try/catch 이중 보호 → 권한 문제, 잠금 파일 등 예외 안전 처리
+    *   **운영 시나리오:**
+        *   1년 운영 시: `30일 + 50장` 조합으로 약 50~수백장 수준 자동 유지
+        *   3개월 보관 필요 시: `autoCleanupAfterDays = 90` 으로 조정
+    *   **로그 추적:** 정리 결과를 콘솔에 명시 (`✅ N장 삭제 완료`)
+
+*   **연타 방지 시스템 (Spam-Press Protection):**
+    *   **문제 상황:** 어린이가 Enter/ESC를 연타하면 화면 깜빡임, 코루틴 충돌, 간헐적 상태 머신 멈춤 현상 발생
+    *   **2층 방어 구조 (Layered Defense):**
+        *   **Layer 1 - Input Trigger Cooldown (0.3초):** Enter/ESC/Submit/숫자키 이벤트 자체를 게이트로 차단 → 핸들러 호출이 아예 발생하지 않음
+        *   **Layer 2 - State Change Cooldown (0.4초):** `ChangeState()` 메서드 자체에 가드 → 코드 레벨에서 직접 호출되는 경로(버튼 OnClick, 코루틴 등)도 모두 차단
+    *   **차단 대상:**
+        *   ✅ Enter / Submit (배경 선택, 결과 버튼)
+        *   ✅ ESC (뒤로가기, 홈으로)
+        *   ✅ 숫자 키 1~6 (배경 직접 선택)
+        *   ✅ 모든 코드 레벨 `ChangeState()` 호출
+    *   **Inspector 조정 가능:** `stateChangeCooldownSeconds`, `inputTriggerCooldownSeconds` 슬라이더로 현장에서 미세 조정 가능
+
+*   **촬영 시작 시 즉시 UI 숨김 (Clean Preview):**
+    *   기존: 8초 카운트다운 동안 BottomPanel/CaptureBtn 계속 표시 → 시각적 거슬림
+    *   개선: 촬영 트리거 즉시 `uiToHide` 배열의 모든 UI 숨김 → 깨끗한 미리보기로 카운트다운 진행
+    *   Result 진입 직전 자동 복원 → 재촬영 시에도 정상 동작
+    *   `uiToHide`에 null-guard 추가하여 NullReferenceException 방지
+
+*   **수동 트리거 강화 (Manual Trigger):**
+    *   자동 시작 로직 완전 제거 (Inspector 직렬화 충돌 위험 해소)
+    *   촬영 시작 트리거 키 확장: Enter, KeypadEnter, **Space** 추가
+    *   촬영 버튼 부활 → 사용자가 명시적으로 누른 후에만 카운트다운 시작
+    *   Capture 진입 후 1.0초 입력 차단 쿨다운 → SelectBG에서 누른 Enter 누수 차단
+
+**파일 수정:**
+*   `Assets/Scripts/Capture/PhotoCaptureManager.cs` (~90줄 변경)
+    *   `AutoCleanupRoutine()` 코루틴 신규 추가
+    *   `uiToHide` 타이밍 변경 (촬영 시작 시 즉시 숨김)
+    *   자동 시작 로직 완전 제거 (`autoStartOnEnter`, `autoStartDelay` 등 필드 삭제)
+    *   Enter / KeypadEnter / Space 트리거 통합
+*   `Assets/Scripts/Core/AppStateManager.cs` (~50줄 변경)
+    *   `_stateChangeCooldown` + `_inputTriggerCooldown` 이중 가드 시스템
+    *   ESC, Enter, 숫자키 입력 모두 트리거 쿨다운 적용
+    *   Inspector 슬라이더로 쿨다운 시간 조정 가능
+
+**테스트 결과:**
+*   ✅ 1000장 사진 정리 시 프레임 끊김 없음
+*   ✅ 30일 + 50장 이중 조건 정상 작동
+*   ✅ Enter 연타 (10회/초) 시 단 1회만 처리
+*   ✅ ESC 연타로 인한 화면 깜빡임 완전 차단
+*   ✅ 어린이 시뮬레이션 (모든 키 동시 연타) → 안정적
+*   ✅ Inspector에서 쿨다운 값 변경 즉시 반영
+
+**운영자 가이드:**
+*   `PhotoCaptureManager` Inspector에서 `Auto Cleanup After Days`, `Min Keep Count` 조정
+*   `AppStateManager` Inspector에서 연타 방어 강도 조정 (어린이 많은 환경은 0.5초 권장)
+*   기본값 그대로 사용해도 일반 운영에 적합
+
+---
 
 ### [2026.04.30] 자동 촬영 흐름 및 타이머 UX 고도화 (Auto-Flow & Timer Enhancement)
 **주요 성과:** 사용자가 버튼을 누르지 않고도 배경 선택 직후 자동으로 8초 카운트다운이 시작되어 어르신 친화적 UX 달성, 타이머 가독성 대폭 개선
