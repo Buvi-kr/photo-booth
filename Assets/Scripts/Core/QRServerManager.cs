@@ -25,6 +25,13 @@ public class QRServerManager : MonoBehaviour
     private int port = 3000;
     private string photoDirectory;
 
+    // ── 진단용 (cloudflared 동작/사망 원인 추적) ──
+    private string _tunnelLogPath;
+    private System.DateTime _tunnelStartTime;
+    private readonly object _logFileLock = new object();
+    private int _stderrLineCount = 0;
+    private int _stdoutLineCount = 0;
+
     private void Awake()
     {
         if (Instance == null)
@@ -204,6 +211,9 @@ public class QRServerManager : MonoBehaviour
             return;
         }
 
+        // ── 진단 로그 파일 경로 준비 (날짜별) ──
+        InitTunnelLogFile();
+
         // ── 잔존 cloudflared 프로세스 강제 종료 (이전 실행 충돌 방지) ──
         try
         {
@@ -214,36 +224,153 @@ public class QRServerManager : MonoBehaviour
                 p.Dispose();
             }
             if (existing.Length > 0)
-                UnityEngine.Debug.Log($"[Tunnel] 잔존 cloudflared 프로세스 {existing.Length}개 강제 종료 완료.");
+            {
+                string msg = $"[Tunnel] 잔존 cloudflared 프로세스 {existing.Length}개 강제 종료 완료.";
+                UnityEngine.Debug.Log(msg);
+                WriteTunnelLog($"[CLEANUP] {msg}");
+            }
         }
         catch (Exception ex)
         {
-            UnityEngine.Debug.LogWarning("[Tunnel] 잔존 프로세스 종료 중 오류: " + ex.Message);
+            string msg = "[Tunnel] 잔존 프로세스 종료 중 오류: " + ex.Message;
+            UnityEngine.Debug.LogWarning(msg);
+            WriteTunnelLog($"[CLEANUP-ERR] {msg}");
         }
 
         cloudflaredProcess = new Process();
         cloudflaredProcess.StartInfo.FileName = cloudflaredPath;
         cloudflaredProcess.StartInfo.Arguments = $"tunnel --url http://127.0.0.1:{port} --http-host-header 127.0.0.1";
         cloudflaredProcess.StartInfo.UseShellExecute = false;
-        cloudflaredProcess.StartInfo.RedirectStandardError = true;
+        cloudflaredProcess.StartInfo.RedirectStandardError  = true;
+        cloudflaredProcess.StartInfo.RedirectStandardOutput = true;  // ✨ stdout 도 캡처
         cloudflaredProcess.StartInfo.CreateNoWindow = true;
+        cloudflaredProcess.EnableRaisingEvents = true;  // ✨ Exited 이벤트 받기 위함
 
+        // ── stderr (cloudflared 는 대부분 stderr 로 출력) ──
         cloudflaredProcess.ErrorDataReceived += (sender, args) =>
         {
-            if (!string.IsNullOrEmpty(args.Data))
+            if (string.IsNullOrEmpty(args.Data)) return;
+
+            _stderrLineCount++;
+            WriteTunnelLog($"[stderr] {args.Data}");
+
+            // URL 추출 (성공 신호)
+            Match match = Regex.Match(args.Data, @"https://[a-zA-Z0-9-]+\.trycloudflare\.com");
+            if (match.Success && !isServerReady)
             {
-                Match match = Regex.Match(args.Data, @"https://[a-zA-Z0-9-]+\.trycloudflare\.com");
-                if (match.Success)
-                {
-                    currentTunnelUrl = match.Value;
-                    isServerReady = true;
-                    UnityEngine.Debug.Log($"\n🚀 [성공] 오늘의 외부 접속 주소: {currentTunnelUrl}\n");
-                }
+                currentTunnelUrl = match.Value;
+                isServerReady = true;
+                double bootSec = (System.DateTime.Now - _tunnelStartTime).TotalSeconds;
+                string ok = $"\n🚀 [성공] 오늘의 외부 접속 주소: {currentTunnelUrl} (부팅 {bootSec:F1}s)\n";
+                UnityEngine.Debug.Log(ok);
+                WriteTunnelLog($"[URL]   {currentTunnelUrl}");
+                WriteTunnelLog($"[READY] isServerReady=true (부팅 {bootSec:F1}s, stderr {_stderrLineCount}줄째)");
             }
         };
 
+        // ── stdout (예외적이지만 일부 메시지가 여기로 올 수도) ──
+        cloudflaredProcess.OutputDataReceived += (sender, args) =>
+        {
+            if (string.IsNullOrEmpty(args.Data)) return;
+            _stdoutLineCount++;
+            WriteTunnelLog($"[stdout] {args.Data}");
+        };
+
+        // ── 프로세스 종료 감지 (좀비/크래시/세션만료 진단의 핵심) ──
+        cloudflaredProcess.Exited += (sender, args) =>
+        {
+            try
+            {
+                int code = cloudflaredProcess.ExitCode;
+                System.TimeSpan uptime = System.DateTime.Now - _tunnelStartTime;
+                string codeMeaning = ExitCodeMeaning(code);
+                string msg = $"[EXITED] cloudflared 종료. ExitCode={code} ({codeMeaning}), " +
+                             $"가동시간={uptime.TotalHours:F2}h ({uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}), " +
+                             $"stderr {_stderrLineCount}줄/stdout {_stdoutLineCount}줄";
+                UnityEngine.Debug.LogWarning("🔴 " + msg);
+                WriteTunnelLog(msg);
+                WriteTunnelLog($"[STATE] isServerReady 직전값: {isServerReady}, URL: {currentTunnelUrl}");
+
+                // 죽었으면 서버 상태 갱신 (다음 사진은 QR 없이 처리되도록)
+                isServerReady = false;
+            }
+            catch (Exception ex)
+            {
+                WriteTunnelLog($"[EXITED-ERR] 종료 핸들러 오류: {ex.Message}");
+            }
+        };
+
+        _tunnelStartTime    = System.DateTime.Now;
+        _stderrLineCount    = 0;
+        _stdoutLineCount    = 0;
+        WriteTunnelLog($"[START] cloudflared 시작. cmd: {cloudflaredProcess.StartInfo.FileName} " +
+                       $"{cloudflaredProcess.StartInfo.Arguments}");
+
         cloudflaredProcess.Start();
         cloudflaredProcess.BeginErrorReadLine();
+        cloudflaredProcess.BeginOutputReadLine();
+
+        WriteTunnelLog($"[START] PID={cloudflaredProcess.Id} 부팅 시작됨.");
+    }
+
+    /// <summary>
+    /// 날짜별 진단 로그 파일 경로 초기화. MyPhotoBooth/logs/tunnel_yyyyMMdd.log
+    /// 자동 정리 코루틴이 Photo_*.jpg 만 대상으로 하므로 로그는 영향 없음.
+    /// </summary>
+    private void InitTunnelLogFile()
+    {
+        try
+        {
+            string logDir = Path.Combine(photoDirectory, "logs");
+            if (!Directory.Exists(logDir)) Directory.CreateDirectory(logDir);
+            _tunnelLogPath = Path.Combine(logDir, $"tunnel_{System.DateTime.Now:yyyyMMdd}.log");
+
+            // 세션 헤더 (재시작/재부팅 구분에 핵심)
+            WriteTunnelLog($"\n========== 새 세션 시작 {System.DateTime.Now:yyyy-MM-dd HH:mm:ss} ==========");
+            WriteTunnelLog($"[ENV] OS={SystemInfo.operatingSystem}, Unity={Application.unityVersion}");
+            WriteTunnelLog($"[ENV] DeviceName={SystemInfo.deviceName}, port={port}");
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[Tunnel/Log] 로그 파일 초기화 실패: {ex.Message}");
+            _tunnelLogPath = null;
+        }
+    }
+
+    /// <summary>
+    /// 디스크 로그 파일에 1줄 기록. 스레드 안전 (stderr/stdout 이 다른 스레드에서 호출됨).
+    /// 실패해도 앱 동작에 영향 없도록 모든 예외 흡수.
+    /// </summary>
+    private void WriteTunnelLog(string line)
+    {
+        if (string.IsNullOrEmpty(_tunnelLogPath)) return;
+        try
+        {
+            string stamped = $"[{System.DateTime.Now:HH:mm:ss.fff}] {line}\n";
+            lock (_logFileLock)
+            {
+                File.AppendAllText(_tunnelLogPath, stamped);
+            }
+        }
+        catch
+        {
+            // 로그 실패는 무시 (앱 동작 보호)
+        }
+    }
+
+    /// <summary>cloudflared 종료 코드 의미를 사람이 읽을 수 있게 변환.</summary>
+    private string ExitCodeMeaning(int code)
+    {
+        switch (code)
+        {
+            case 0:             return "정상 종료";
+            case 1:             return "일반 에러 (네트워크/터널 실패 가능)";
+            case 2:             return "잘못된 인자";
+            case -1:            return "Kill() 호출됨";
+            case -1073741819:   return "Access Violation (크래시)";
+            case -1073741510:   return "사용자 강제 종료 (Ctrl+C)";
+            default:            return $"미분류 코드";
+        }
     }
 
     // ──────────────────────────────────────────
@@ -308,16 +435,24 @@ public class QRServerManager : MonoBehaviour
         {
             try
             {
-                if (!cloudflaredProcess.HasExited)
-                    cloudflaredProcess.Kill();
+                bool wasAlive = !cloudflaredProcess.HasExited;
+                if (wasAlive) cloudflaredProcess.Kill();
+
+                System.TimeSpan uptime = System.DateTime.Now - _tunnelStartTime;
+                WriteTunnelLog($"[SHUTDOWN] 앱 종료 시점. cloudflared 살아있음={wasAlive}, " +
+                               $"가동시간={uptime.TotalHours:F2}h, isServerReady={isServerReady}");
             }
-            catch (Exception) {}
+            catch (Exception ex)
+            {
+                WriteTunnelLog($"[SHUTDOWN-ERR] 종료 중 오류: {ex.Message}");
+            }
             finally
             {
-                cloudflaredProcess.Dispose();
+                try { cloudflaredProcess.Dispose(); } catch { }
                 cloudflaredProcess = null;
             }
             UnityEngine.Debug.Log("[Tunnel] Cloudflare 터널 안전하게 종료.");
+            WriteTunnelLog($"========== 세션 종료 {System.DateTime.Now:yyyy-MM-dd HH:mm:ss} ==========\n");
         }
     }
 
