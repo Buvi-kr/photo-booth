@@ -103,6 +103,111 @@ graph TD
 
 ## 📅 업데이트 로그 (Release Notes)
 
+### [2026.05.08] Cloudflared 터널 진단 로깅 시스템 (Tunnel Diagnostic Logging)
+**주요 성과:** 장기 무인 운영 중 간헐적으로 발생하는 cloudflared 터널 사망 원인을 정확히 추적할 수 있는 종합 진단 로깅 시스템 도입. 추측 기반 솔루션 도입을 피하고, 실측 데이터 기반 의사결정 가능.
+
+*   **문제 배경:**
+    *   장시간 무인 운영 중 `cloudflared.exe`가 간헐적으로 응답 정지
+    *   재부팅하면 정상 작동 → 누적되는 상태/프로세스 문제로 추정
+    *   기존 코드는 **URL 추출 성공 시에만 로그** → 실패 시 침묵 → 원인 추적 불가능
+    *   가능한 원인들 (어느 것인지 불명):
+        *   `trycloudflare.com` Quick Tunnel 세션 만료 (정식 프로덕션용 아님)
+        *   좀비 프로세스 누적
+        *   Cloudflare 무료 티어 rate limit
+        *   Wi-Fi 일시 끊김으로 인한 연결 끊김
+        *   기관 방화벽의 터널 트래픽 차단
+
+*   **종합 진단 로깅 시스템:**
+    *   **모든 stderr/stdout 라인 캡처:**
+        *   기존: URL 정규식 매치되는 라인만 로그 (성공만 기록)
+        *   변경: 모든 출력 라인을 디스크 로그 파일에 영구 기록
+        *   `RedirectStandardOutput = true` 추가로 stdout도 캡처
+    *   **프로세스 종료 감지 (`Process.Exited` 이벤트):**
+        *   `EnableRaisingEvents = true`로 프로세스 사망 즉시 감지
+        *   종료 시각, 가동시간(시/분/초), `ExitCode`, 마지막 메시지 자동 기록
+        *   `isServerReady = false`로 상태 갱신 (다음 사진은 fallback 처리)
+    *   **`ExitCode` 자동 해석:**
+        ```
+        0           → 정상 종료
+        1           → 일반 에러 (네트워크/터널 실패 가능)
+        2           → 잘못된 인자
+        -1          → Kill() 호출됨 (Unity가 죽임)
+        -1073741819 → Access Violation (크래시)
+        -1073741510 → 사용자 강제 종료 (Ctrl+C)
+        ```
+    *   **세션 단위 명확한 구분:**
+        ```
+        ========== 새 세션 시작 2026-05-08 14:23:01 ==========
+        ... 운영 중 모든 로그 ...
+        ========== 세션 종료 2026-05-08 22:00:00 ==========
+        ```
+        재부팅, Unity 재시작 모두 헤더로 자동 구분됨
+
+*   **로그 파일 관리:**
+    *   **저장 위치:** `MyPhotoBooth/logs/tunnel_yyyyMMdd.log` (날짜별 자동 분리)
+    *   **이어쓰기 방식 (`File.AppendAllText`):** 같은 날 N번 재시작/재부팅해도 한 파일에 누적 → 시간순 패턴 분석 가능
+    *   **자동 정리 영향 없음:** 자동 정리 코루틴은 `Photo_*.jpg` 패턴만 대상, `logs/` 폴더는 영구 보관
+    *   **스레드 안전 (`lock` 적용):** stderr/stdout이 워커 스레드에서 호출되어도 파일 충돌 없음
+    *   **에러 흡수:** 로그 쓰기 실패해도 앱 동작에 영향 없음 (try/catch + 무시)
+
+*   **타임라인 추적 정보:**
+    *   `_tunnelStartTime` 필드로 프로세스 시작 시각 기록
+    *   READY 시점: 부팅에 걸린 시간 기록 (`부팅 2.0s`)
+    *   EXITED 시점: 총 가동시간 기록 (`6.32h (06:18:59)`)
+    *   stderr/stdout 라인 카운터 누적 (`stderr 4521줄/stdout 0줄`)
+    *   → 패턴 분석: 매번 N시간 후 사망? 특정 출력량에서 사망?
+
+*   **로그 예시:**
+    ```
+    ========== 새 세션 시작 2026-05-08 14:23:01 ==========
+    [14:23:01.234] [ENV] OS=Windows 10, Unity=2022.3.x
+    [14:23:01.235] [ENV] DeviceName=KIOSK-PC-01, port=3000
+    [14:23:01.456] [CLEANUP] 잔존 cloudflared 프로세스 1개 강제 종료 완료.
+    [14:23:01.567] [START] cloudflared 시작. cmd: ... tunnel --url ...
+    [14:23:01.678] [START] PID=12345 부팅 시작됨.
+    [14:23:02.123] [stderr] INF Requesting new quick Tunnel on trycloudflare.com...
+    [14:23:03.456] [stderr] INF |  Your quick Tunnel has been created! |
+    [14:23:03.458] [stderr] INF |  https://xyz123.trycloudflare.com    |
+    [14:23:03.459] [URL]   https://xyz123.trycloudflare.com
+    [14:23:03.460] [READY] isServerReady=true (부팅 2.0s, stderr 12줄째)
+    ... (운영 중 모든 메시지 기록) ...
+    [20:42:11.456] [stderr] ERR Failed to serve quic connection error="..."
+    [20:42:11.890] [stderr] WRN no more connections active, exiting
+    [20:42:12.001] [EXITED] cloudflared 종료. ExitCode=1 (일반 에러), 가동시간=6.32h
+    [20:42:12.002] [STATE] isServerReady 직전값: true, URL: https://xyz123...
+    ```
+
+*   **운영 효과:**
+    *   ✅ 추측 기반 솔루션 도입 회피 (Tailscale 등 대안 도입 전 확실한 원인 진단)
+    *   ✅ 며칠 운영 후 USB로 로그 회수 → 정확한 패턴 분석 가능
+    *   ✅ 재부팅 vs Unity 재시작 자동 구분
+    *   ✅ 마지막 사망 메시지 100% 보존 → 진짜 원인 도출
+    *   ✅ 동작 변경 0 (로깅만 추가, 위험도 0)
+
+*   **분석 체크리스트 (며칠 운영 후 로그 회수 시):**
+    1. `[EXITED]` 라인 검색 → 사망 횟수/시점
+    2. 매번 비슷한 시간대에 사망? → 세션 만료 의심
+    3. 매번 비슷한 가동시간 후 사망? → 타이머 기반 만료
+    4. `[EXITED]` 직전 stderr 라인 → 정확한 트리거 메시지
+    5. `ExitCode` 패턴 → 자체 종료 vs 외부 Kill 구분
+    6. "quic" / "edge" / "rate" / "429" 키워드 검색 → 카테고리 분류
+
+**파일 수정:**
+*   `Assets/Scripts/Core/QRServerManager.cs` (~150줄 변경)
+    *   `_tunnelLogPath`, `_tunnelStartTime`, `_logFileLock`, `_stderrLineCount`, `_stdoutLineCount` 필드 추가
+    *   `WriteTunnelLog(string)` 스레드 안전 헬퍼 메서드
+    *   `InitTunnelLogFile()` 날짜별 로그 파일 초기화
+    *   `ExitCodeMeaning(int)` 종료 코드 사람 읽기 변환
+    *   `ErrorDataReceived`/`OutputDataReceived` 핸들러 확장
+    *   `Process.Exited` 핸들러 신규 추가
+    *   `OnApplicationQuit` 종료 로그 추가
+
+**리스크:** 0 (additive 로깅, 기존 동작 100% 동일)
+**작업 시간:** 30분 (개발) + 며칠 (운영 데이터 수집)
+**다음 단계:** 로그 회수 → 원인 분석 → 최적 솔루션 결정 (Tailscale / Named Tunnel / Health Check)
+
+---
+
 ### [2026.05.08] 무인 키오스크 장기 운영 안정화 (Long-Term Kiosk Reliability)
 **주요 성과:** 수개월~수년 무인 운영을 위한 자동 디스크 관리 + 어린이 연타 공격 방어 시스템 도입. 운영자 개입 없이도 안정적인 장기 가동 환경 구축.
 
