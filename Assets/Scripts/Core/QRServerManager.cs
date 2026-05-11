@@ -70,7 +70,18 @@ public class QRServerManager : MonoBehaviour
             Directory.CreateDirectory(photoDirectory);
 
         StartLocalWebServer();
+
+        // 초기 부팅 시에는 우리 핸들러가 아직 어떤 프로세스에도 안 붙어있어서
+        // _intentionalKill 토글이 필수는 아니지만, 일관성을 위해 가드함
+        _intentionalKill = true;
         StartCloudflareTunnel();
+        StartCoroutine(ResetIntentionalKillAfter(2f));
+    }
+
+    private IEnumerator ResetIntentionalKillAfter(float seconds)
+    {
+        yield return new WaitForSeconds(seconds);
+        _intentionalKill = false;
     }
 
     // ──────────────────────────────────────────
@@ -233,8 +244,8 @@ public class QRServerManager : MonoBehaviour
         InitTunnelLogFile();
 
         // ── 잔존 cloudflared 프로세스 강제 종료 (이전 실행 충돌 방지) ──
-        // _intentionalKill = true 로 표시 → Exited 이벤트가 자동재시작 루프 트리거 안 하게
-        _intentionalKill = true;
+        // ⚠️ _intentionalKill 플래그 관리는 호출자(AttemptRestart 또는 초기 Start)가 담당
+        //    여기서 토글하지 않음 → race condition 방지
         try
         {
             var existing = System.Diagnostics.Process.GetProcessesByName("cloudflared");
@@ -256,8 +267,6 @@ public class QRServerManager : MonoBehaviour
             UnityEngine.Debug.LogWarning(msg);
             WriteTunnelLog($"[CLEANUP-ERR] {msg}");
         }
-        // 잔존 정리 완료 → 의도된 kill 플래그 해제 (이후 사망은 비정상으로 간주)
-        _intentionalKill = false;
 
         cloudflaredProcess = new Process();
         cloudflaredProcess.StartInfo.FileName = cloudflaredPath;
@@ -268,10 +277,16 @@ public class QRServerManager : MonoBehaviour
         cloudflaredProcess.StartInfo.CreateNoWindow = true;
         cloudflaredProcess.EnableRaisingEvents = true;  // ✨ Exited 이벤트 받기 위함
 
+        // ★ 핸들러가 늦게 발화돼도 "그 때 그 프로세스"를 정확히 가리키도록 로컬 캡처
+        //   → cloudflaredProcess 필드가 새 인스턴스로 바뀌어도 OK (race-free)
+        Process boundProcess = cloudflaredProcess;
+
         // ── stderr (cloudflared 는 대부분 stderr 로 출력) ──
         cloudflaredProcess.ErrorDataReceived += (sender, args) =>
         {
             if (string.IsNullOrEmpty(args.Data)) return;
+            // stale 체크: 이 핸들러가 옛 세션 프로세스의 출력이라면 무시
+            if (boundProcess != cloudflaredProcess) return;
 
             _stderrLineCount++;
             WriteTunnelLog($"[stderr] {args.Data}");
@@ -294,6 +309,7 @@ public class QRServerManager : MonoBehaviour
         cloudflaredProcess.OutputDataReceived += (sender, args) =>
         {
             if (string.IsNullOrEmpty(args.Data)) return;
+            if (boundProcess != cloudflaredProcess) return; // stale 무시
             _stdoutLineCount++;
             WriteTunnelLog($"[stdout] {args.Data}");
         };
@@ -303,15 +319,30 @@ public class QRServerManager : MonoBehaviour
         {
             try
             {
-                int code = cloudflaredProcess.ExitCode;
+                // ★ 로컬 캡처(boundProcess) 사용 → 옛 프로세스 ExitCode 정확히 읽음
+                int code = -999;
+                try { code = boundProcess.ExitCode; } catch { /* 이미 dispose된 경우 */ }
                 System.TimeSpan uptime = System.DateTime.Now - _tunnelStartTime;
                 string codeMeaning = ExitCodeMeaning(code);
                 bool intentional = _intentionalKill;
-                string msg = $"[EXITED] cloudflared 종료. ExitCode={code} ({codeMeaning}), " +
+                bool isStale = (boundProcess != cloudflaredProcess);
+
+                string msg = $"[EXITED] cloudflared 종료. PID={GetSafePid(boundProcess)}, " +
+                             $"ExitCode={code} ({codeMeaning}), " +
                              $"가동시간={uptime.TotalHours:F2}h ({uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}), " +
-                             $"stderr {_stderrLineCount}줄/stdout {_stdoutLineCount}줄, intentional={intentional}";
+                             $"stderr {_stderrLineCount}줄/stdout {_stdoutLineCount}줄, " +
+                             $"intentional={intentional}, stale={isStale}";
                 UnityEngine.Debug.LogWarning("🔴 " + msg);
                 WriteTunnelLog(msg);
+
+                // ★ stale 프로세스의 늦은 종료 이벤트 → 현재 세션에 영향 X
+                //   현 활성 프로세스(cloudflaredProcess) 상태 건드리지 말고 종료
+                if (isStale)
+                {
+                    WriteTunnelLog("[EXITED-STALE] 이미 새 세션 진행 중 → 현재 세션 상태 보호, 재시작 트리거 X");
+                    return;
+                }
+
                 WriteTunnelLog($"[STATE] isServerReady 직전값: {isServerReady}, URL: {currentTunnelUrl}");
 
                 // 죽었으면 서버 상태 갱신 (다음 사진은 QR 없이 처리되도록)
@@ -433,11 +464,15 @@ public class QRServerManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 견고한 자동 재시작 코루틴. 다중 가드:
-    ///   ① 부팅 grace period 이내 → 재시작 보류 (정상 부팅 대기)
-    ///   ② 시간당 최대 횟수 초과 → 보류 (Cloudflare rate limit 보호)
-    ///   ③ 마지막 재시작 후 쿨다운 미충족 → 보류 (연속 재시작 차단)
-    /// 모든 결정은 디스크 로그에 기록 → 사후 진단 가능.
+    /// 견고한 자동 재시작 코루틴. 다중 가드 (사용자 우려사항 반영):
+    ///   ① 프로세스 살아있는데 부팅 중 → 확장 grace 적용 (정상 부팅 보호)  ★ NEW
+    ///   ② 프로세스 죽었지만 부팅 grace 이내 → 보류
+    ///   ③ 시간당 최대 횟수 초과 → 보류 (Cloudflare rate limit 보호)
+    ///   ④ 마지막 재시작 후 쿨다운 미충족 → 보류 (연속 재시작 차단)
+    ///   ⑤ 이미 isServerReady=true 면 → 보류 (정상 서버 보호)  ★ NEW
+    /// 통과 시:
+    ///   - _intentionalKill 을 코루틴 전체 동안 유지 (Exited race 방지)
+    ///   - 2초 추가 holdoff 후 false 로 해제 → 이전 세션 Exited 흡수
     /// </summary>
     private IEnumerator AttemptRestart()
     {
@@ -448,17 +483,48 @@ public class QRServerManager : MonoBehaviour
 
         System.DateTime now = System.DateTime.Now;
 
-        // ── Guard 1: 부팅 grace period ──
-        double sinceStart = (now - _tunnelStartTime).TotalSeconds;
-        if (sinceStart < initialBootGracePeriod)
+        // ── Guard A (NEW): 이미 서버가 ready 상태면 절대 재시작 안 함 ──
+        //    "잘 되던 서버가 갑자기 닫히는 경우" 방어
+        if (isServerReady)
         {
-            WriteTunnelLog($"[RESTART] ⏳ 부팅 중 ({sinceStart:F1}s < {initialBootGracePeriod}s grace) → 재시작 보류");
+            WriteTunnelLog($"[RESTART] ✅ 서버 정상(isServerReady=true) → 재시작 불필요, 보류");
             _restartInProgress = false;
             yield break;
         }
 
-        // ── Guard 2: 시간당 횟수 제한 ──
-        // 1시간 지난 항목 제거
+        // ── Guard B (NEW): 프로세스가 살아있으면 확장 grace 적용 ──
+        //    isServerReady=false 라도 프로세스가 살아있으면 부팅 중일 가능성
+        //    → 정상 부팅이 끝날 시간을 충분히 줌
+        bool processAlive = (cloudflaredProcess != null && !cloudflaredProcess.HasExited);
+        double sinceStart = (now - _tunnelStartTime).TotalSeconds;
+
+        if (processAlive)
+        {
+            // 살아있을 때는 grace 의 2배까지 인내 (느린 네트워크 부팅 보호)
+            double aliveGrace = initialBootGracePeriod * 2.0;
+            if (sinceStart < aliveGrace)
+            {
+                WriteTunnelLog($"[RESTART] ⏳ 프로세스 살아있고 부팅 중일 가능성 " +
+                               $"({sinceStart:F1}s < {aliveGrace:F1}s 확장grace) → 재시작 보류");
+                _restartInProgress = false;
+                yield break;
+            }
+            // 확장 grace 도 넘긴 살아있는 프로세스 → 정상 부팅 실패로 판단
+            WriteTunnelLog($"[RESTART] ⚠️ 프로세스 살아있지만 {sinceStart:F0}s 동안 ready 안 됨 → 재시작 진행");
+        }
+        else
+        {
+            // 죽은 프로세스는 기본 grace
+            if (sinceStart < initialBootGracePeriod)
+            {
+                WriteTunnelLog($"[RESTART] ⏳ 사망했지만 부팅 grace 이내 " +
+                               $"({sinceStart:F1}s < {initialBootGracePeriod}s) → 보류");
+                _restartInProgress = false;
+                yield break;
+            }
+        }
+
+        // ── Guard C: 시간당 횟수 제한 ──
         while (_recentRestartTimes.Count > 0 && (now - _recentRestartTimes.Peek()).TotalHours >= 1.0)
             _recentRestartTimes.Dequeue();
 
@@ -470,7 +536,7 @@ public class QRServerManager : MonoBehaviour
             yield break;
         }
 
-        // ── Guard 3: 마지막 재시작 후 쿨다운 ──
+        // ── Guard D: 마지막 재시작 후 쿨다운 ──
         double sinceLast = (now - _lastRestartTime).TotalSeconds;
         if (sinceLast < restartCooldownSeconds)
         {
@@ -479,19 +545,38 @@ public class QRServerManager : MonoBehaviour
             yield break;
         }
 
-        // ── 통과! 재시작 실행 ──
+        // ── 모든 가드 통과! 재시작 실행 ──
         _lastRestartTime = now;
         _recentRestartTimes.Enqueue(now);
-        WriteTunnelLog($"[RESTART] 🔄 자동 재시작 #{_recentRestartTimes.Count}/시간 실행");
+        WriteTunnelLog($"[RESTART] 🔄 자동 재시작 #{_recentRestartTimes.Count}/시간 실행 " +
+                       $"(프로세스 {(processAlive ? "살아있음" : "사망")}, 가동 {sinceStart:F0}s)");
 
-        // 상태 초기화
-        isServerReady = false;
-        currentTunnelUrl = "";
+        // ★ 코루틴 전체 동안 _intentionalKill 유지 → 이전 세션 Exited 이벤트 흡수
+        //   (StartCloudflareTunnel 내부에서 토글하지 않으므로 여기서 책임지고 관리)
+        _intentionalKill = true;
+        try
+        {
+            // 상태 초기화 + 새 터널 시작
+            isServerReady = false;
+            currentTunnelUrl = "";
+            StartCloudflareTunnel();
+        }
+        catch (Exception ex)
+        {
+            WriteTunnelLog($"[RESTART-ERR] {ex.Message}");
+        }
 
-        // StartCloudflareTunnel 은 자체적으로 잔존 프로세스 정리 후 새로 시작
-        StartCloudflareTunnel();
+        // 이전 세션의 늦은 Exited 이벤트 모두 흡수될 시간 확보 (2초)
+        yield return new WaitForSeconds(2f);
+        _intentionalKill = false;
 
         _restartInProgress = false;
+    }
+
+    /// <summary>안전하게 PID 추출 (Dispose된 프로세스도 안전 처리).</summary>
+    private int GetSafePid(Process p)
+    {
+        try { return p.Id; } catch { return -1; }
     }
 
     // ──────────────────────────────────────────
