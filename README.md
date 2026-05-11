@@ -103,6 +103,147 @@ graph TD
 
 ## 📅 업데이트 로그 (Release Notes)
 
+### [2026.05.08] 서버 대기 팝업 + Cloudflared 자동 재시작 (UX & Self-Healing)
+**주요 성과:** 무응답 → 사용자 피드백 UI 추가로 UX 개선 + cloudflared 사망 시 견고한 가드를 통한 자동 자가복구 시스템 도입. 무인 운영 신뢰성 한 단계 도약.
+
+*   **서버 대기 팝업 (Server-Waiting Popup):**
+    *   **문제 배경:**
+        *   기존: `isServerReady=false` 시 `TakePhoto()` 침묵으로 거절 → 사용자에게 보이는 변화 없음
+        *   사용자 인지: "고장났나? 버튼이 안 먹히네" → 연타 → 추가 문제 유발
+    *   **해결책:**
+        *   인스펙터 연결 가능한 `serverWaitingPopup` GameObject 필드 추가
+        *   `serverWaitingPopupText` TMP 텍스트로 메시지 표시: "⏳ 서버 연결 중입니다. 잠시만 기다려주세요!"
+        *   `SetAsLastSibling()`로 항상 최상위 표시
+    *   **자동 해제 (Dual Dismiss):**
+        *   **키/클릭 입력** (`Input.anyKeyDown`) → 즉시 해제
+        *   **자동 타임아웃** (`popupAutoDismissSeconds`, 기본 3초) → 자동 해제
+        *   사용자가 아무것도 안 해도 자연스럽게 사라짐
+    *   **Null-Safe 설계:**
+        *   `serverWaitingPopup`가 비어있으면 기존 동작(콘솔 경고만) 유지
+        *   인스펙터 설정 안 해도 빌드/실행 문제 없음
+
+*   **Cloudflared 자동 재시작 (Self-Healing Tunnel):**
+    *   **문제 배경:**
+        *   장시간 운영 중 cloudflared가 간헐적으로 사망 → 재부팅 전까지 QR 불가
+        *   진단 결과: 세션 만료, 좀비 프로세스, 네트워크 끊김 등 다양한 원인 추정
+        *   재시작이 해결책일 가능성 높지만, 무차별 재시작은 더 큰 위험 (rate limit, 무한 루프)
+    *   **3중 가드 시스템 (Triple Guard):**
+        *   **Guard 1 - 부팅 Grace Period** (`initialBootGracePeriod`, 기본 10초)
+            *   앱 시작 후 10초 이내에는 재시작 금지
+            *   정상 부팅(평균 2~5초) 중인 프로세스를 죽이지 않도록 보호
+        *   **Guard 2 - 시간당 횟수 제한** (`maxRestartsPerHour`, 기본 6회)
+            *   1시간 슬라이딩 윈도우로 재시작 횟수 추적
+            *   한도 초과 시 차단 → Cloudflare rate limit/블랙리스트 방지
+            *   `Queue<DateTime>` 자료구조로 효율적 윈도우 관리
+        *   **Guard 3 - 쿨다운** (`restartCooldownSeconds`, 기본 15초)
+            *   마지막 재시작 후 15초 미만이면 보류
+            *   연속 재시작(spamming restart) 차단
+    *   **트리거 경로:**
+        *   **자동 (Passive):** `Process.Exited` 이벤트 → 비정상 종료 시 `_restartRequested=true`
+        *   **수동 (Active):** `PhotoCaptureManager`에서 사용자 촬영 시도 시 `RequestRestart()` 호출
+        *   둘 다 동일한 가드 통과해야 실행됨
+    *   **`_intentionalKill` 플래그 (루프 방지):**
+        *   재시작 중 잔존 프로세스 정리 시 `_intentionalKill=true` 설정
+        *   `Exited` 핸들러가 이 플래그 확인 → 의도된 kill은 재시작 트리거 안 함
+        *   `OnApplicationQuit`에서도 사용 → 앱 종료가 재시작 트리거 안 함
+        *   루프: `restart → kill → Exited → restart → ...` 완전 차단
+    *   **스레드 안전 설계:**
+        *   `Process.Exited`는 워커 스레드 → Unity API 직접 호출 불가
+        *   `volatile bool _restartRequested` 플래그로 메인 스레드에 신호
+        *   `Update()`에서 플래그 확인 → 메인 스레드에서 코루틴 실행
+    *   **모든 결정 로깅 (진단 추적):**
+        ```
+        [RESTART] ⏳ 부팅 중 (3.2s < 10s grace) → 재시작 보류
+        [RESTART] ❌ 시간당 한도(6)초과 → 재시작 차단. 1시간 후 자동 재허용.
+        [RESTART] ⏳ 쿨다운 중 (8.5s < 15s) → 보류
+        [RESTART] 🔄 자동 재시작 #2/시간 실행
+        ```
+
+*   **통합 흐름 (Popup + Restart):**
+    ```
+    [사용자 액션]                    [시스템 동작]
+    ─────────────────────────────────────────────
+    촬영 버튼 클릭
+       ↓
+    isServerReady == false?
+       ↓ YES
+    1. 팝업 표시: "서버 연결 중..."
+    2. QRServerManager.RequestRestart() 호출
+       ↓
+    3중 가드 통과?
+       ├─ YES → cloudflared 재시작 시도
+       └─ NO  → 로그에 보류 사유 기록
+       ↓
+    사용자: 키 누르거나 3초 대기
+       ↓
+    팝업 자동 해제
+       ↓
+    재시도 (성공 시 정상 촬영)
+    ```
+
+*   **인스펙터 노출 파라미터 (현장 튜닝 가능):**
+
+    **PhotoCaptureManager:**
+    | 필드 | 기본값 | 설명 |
+    |------|--------|------|
+    | `Server Waiting Popup` | (비움) | 팝업 GameObject (선택) |
+    | `Server Waiting Popup Text` | (비움) | TMP 텍스트 (선택) |
+    | `Popup Auto Dismiss Seconds` | 3 | 자동 해제 시간 |
+    | `Request Server Restart On Popup` | true | 팝업 + 재시작 동시 요청 |
+
+    **QRServerManager:**
+    | 필드 | 기본값 | 설명 |
+    |------|--------|------|
+    | `Auto Restart On Death` | true | 자동 재시작 활성화 |
+    | `Restart Cooldown Seconds` | 15 | 재시작 간 최소 간격 |
+    | `Max Restarts Per Hour` | 6 | 시간당 최대 횟수 |
+    | `Initial Boot Grace Period` | 10 | 부팅 보호 시간 |
+
+**파일 수정:**
+*   `Assets/Scripts/Core/QRServerManager.cs` (~130줄 변경)
+    *   `using System.Collections.Generic;` 추가
+    *   인스펙터 자동복구 설정 4개 필드 추가
+    *   `_restartRequested`, `_intentionalKill` volatile 플래그
+    *   `_recentRestartTimes Queue<DateTime>` 슬라이딩 윈도우
+    *   `Update()` 메서드 신규 추가 (재시작 플래그 처리)
+    *   `RequestRestart()` public API 추가
+    *   `AttemptRestart()` 코루틴 (3중 가드)
+    *   `Process.Exited` 핸들러 → 비정상 종료 시 재시작 요청
+    *   잔존 정리 + `OnApplicationQuit` → `_intentionalKill=true`로 보호
+*   `Assets/Scripts/Capture/PhotoCaptureManager.cs` (~50줄 변경)
+    *   인스펙터 팝업 설정 4개 필드 추가
+    *   `_popupShowTime` 추적 필드
+    *   `ShowServerWaitingPopup()` 메서드
+    *   `HandleServerWaitingPopupDismiss()` 메서드
+    *   `TakePhoto()` → 팝업 표시 + 재시작 요청 호출
+    *   `Update()` → 매 프레임 dismiss 체크
+
+**운영자 가이드:**
+*   **팝업 UI 설정 (선택):**
+    1. Unity에서 Canvas 아래에 팝업용 Panel 생성
+    2. 안에 TextMeshPro 텍스트 배치
+    3. `PhotoCaptureManager`의 `Server Waiting Popup` 필드에 Panel 드래그
+    4. `Server Waiting Popup Text` 필드에 TMP 드래그
+    5. 처음에는 Panel을 비활성 상태로 둠 (코드가 켜고 끔)
+*   **재시작 동작 튜닝:**
+    *   현장에서 너무 자주 재시작 → `Max Restarts Per Hour` 줄이기 (3~4)
+    *   재시작이 너무 늦음 → `Restart Cooldown Seconds` 줄이기 (10~12)
+    *   부팅이 오래 걸림 → `Initial Boot Grace Period` 늘리기 (15~20)
+
+**리스크 평가:**
+*   ✅ 팝업은 null-safe → 설정 안 해도 동작 영향 없음
+*   ✅ 3중 가드 → 무한 루프/rate limit 완전 차단
+*   ✅ 모든 결정 로깅 → 사후 분석 가능
+*   ⚠️ 재시작이 실제 문제 해결 안 할 수도 (네트워크 자체 끊김 시)
+    *   → 로그로 패턴 확인 후 필요시 Tailscale 전환 가능
+
+**기대 효과:**
+*   사용자 경험: "고장났나?" → "잠깐 기다리면 되겠지" (명확한 피드백)
+*   운영 안정성: 24시간 무인 운영 가능성 향상
+*   직원 개입 빈도: 매일 재부팅 → 주 1회 정도로 감소 예상
+
+---
+
 ### [2026.05.08] Cloudflared 터널 진단 로깅 시스템 (Tunnel Diagnostic Logging)
 **주요 성과:** 장기 무인 운영 중 간헐적으로 발생하는 cloudflared 터널 사망 원인을 정확히 추적할 수 있는 종합 진단 로깅 시스템 도입. 추측 기반 솔루션 도입을 피하고, 실측 데이터 기반 의사결정 가능.
 
