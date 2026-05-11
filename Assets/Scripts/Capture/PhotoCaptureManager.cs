@@ -285,12 +285,20 @@ public class PhotoCaptureManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 서버 미준비 상태에서 촬영 트리거 시 호출. Inspector 에 popup 객체가 연결되어
-    /// 있을 때만 동작. 키 입력 또는 popupAutoDismissSeconds 후 자동 해제 (Update 에서 처리).
+    /// 서버 미준비 상태에서 촬영 트리거 시 호출.
+    /// 우선순위:
+    ///   ① Inspector 에 popup 객체 연결됨 → 그것 사용 (디자이너 커스텀 우선)
+    ///   ② 비어있음 → 코드로 기본 팝업 자동 생성 (zero-config)
+    /// 키 입력 또는 popupAutoDismissSeconds 후 자동 해제 (Update 에서 처리).
     /// </summary>
     private void ShowServerWaitingPopup()
     {
-        if (serverWaitingPopup == null) return;
+        // ① Inspector 미연결 시 자동 생성 (1회만, 이후 재사용)
+        if (serverWaitingPopup == null)
+        {
+            AutoCreateServerWaitingPopup();
+            if (serverWaitingPopup == null) return; // Canvas 없으면 포기
+        }
 
         if (serverWaitingPopupText != null)
         {
@@ -299,6 +307,83 @@ public class PhotoCaptureManager : MonoBehaviour
         serverWaitingPopup.transform.SetAsLastSibling(); // 항상 최상위
         serverWaitingPopup.SetActive(true);
         _popupShowTime = Time.time;
+    }
+
+    /// <summary>
+    /// 코드 기반 기본 팝업 자동 생성 (Inspector 미연결 시 fallback).
+    /// 스타일: 우주/네온 테마 — 반투명 검은 배경 + 시안 테두리 + 흰 텍스트 + 시안 글로우.
+    /// Canvas 자동 탐색 → 안에 Panel + TMP_Text 자식으로 생성 → Inspector 필드에 할당.
+    /// </summary>
+    private void AutoCreateServerWaitingPopup()
+    {
+        // 메인 Canvas 찾기 (씬에 있는 첫 Canvas, Screen Space - Overlay 또는 Camera)
+        Canvas canvas = FindFirstObjectByType<Canvas>();
+        if (canvas == null)
+        {
+            Debug.LogWarning("[PhotoCapture] Canvas를 찾을 수 없어 자동 팝업 생성 실패.");
+            return;
+        }
+
+        // ── 부모 Panel 생성 ──
+        GameObject panel = new GameObject("ServerWaitingPopup_Auto", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+        panel.transform.SetParent(canvas.transform, false);
+
+        var rt = panel.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0.5f);
+        rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.pivot     = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(900, 320);
+        rt.anchoredPosition = Vector2.zero;
+
+        var bgImg = panel.GetComponent<UnityEngine.UI.Image>();
+        bgImg.color = new Color(0f, 0f, 0f, 0.88f);  // 반투명 검은 배경
+        bgImg.raycastTarget = false;                  // 다른 입력 가로채지 않음
+
+        // ── 시안 테두리 (Outline) ──
+        var outline = panel.AddComponent<UnityEngine.UI.Outline>();
+        outline.effectColor    = new Color(0f, 1f, 1f, 1f);   // cyan
+        outline.effectDistance = new Vector2(3, 3);
+
+        // ── 자식 텍스트 (TMP) ──
+        GameObject textGO = new GameObject("PopupText", typeof(RectTransform));
+        textGO.transform.SetParent(panel.transform, false);
+        var tmp = textGO.AddComponent<TextMeshProUGUI>();
+        tmp.text = "⏳ 서버 연결 중입니다.\n잠시만 기다려주세요!";
+        tmp.alignment = TextAlignmentOptions.Center;
+        tmp.fontSize  = 64;
+        tmp.fontStyle = FontStyles.Bold;
+        tmp.color     = Color.white;
+        tmp.raycastTarget = false;
+        // 외곽선 (TMP 빌트인)
+        tmp.outlineColor = new Color32(0, 0, 0, 255);
+        tmp.outlineWidth = 0.20f;
+
+        var trt = textGO.GetComponent<RectTransform>();
+        trt.anchorMin = Vector2.zero;
+        trt.anchorMax = Vector2.one;
+        trt.offsetMin = new Vector2(40, 40);
+        trt.offsetMax = new Vector2(-40, -40);
+
+        // ── 시안 글로우 (가능한 경우, TMP underlay 셰이더) ──
+        var sharedMat = tmp.fontSharedMaterial;
+        if (sharedMat != null && sharedMat.HasProperty("_UnderlayColor"))
+        {
+            Material mat = new Material(sharedMat);
+            mat.EnableKeyword("UNDERLAY_ON");
+            mat.SetColor("_UnderlayColor", new Color(0f, 1f, 1f, 0.7f));
+            mat.SetFloat("_UnderlayDilate", 0.8f);
+            mat.SetFloat("_UnderlaySoftness", 0.7f);
+            tmp.fontSharedMaterial = mat;
+        }
+
+        // 비활성 상태로 두고 ShowServerWaitingPopup이 켤 것
+        panel.SetActive(false);
+
+        // 필드에 할당 → 다음 호출부터는 재사용
+        serverWaitingPopup = panel;
+        serverWaitingPopupText = tmp;
+
+        Debug.Log("[PhotoCapture] 서버 대기 팝업 자동 생성 완료 (Inspector 미연결 fallback).");
     }
 
     /// <summary>
