@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -20,6 +21,16 @@ public class QRServerManager : MonoBehaviour
     [Header("QR 코드 UI 연결")]
     public RawImage qrCodeDisplay;
 
+    [Header("자동 복구 설정 (cloudflared 사망 시 자동 재시작)")]
+    [Tooltip("cloudflared 사망 감지 시 자동 재시작 활성화")]
+    public bool autoRestartOnDeath = true;
+    [Tooltip("재시작 시도 사이 최소 간격 (초). 너무 짧으면 Cloudflare rate limit 위험")]
+    [Range(5f, 300f)] public float restartCooldownSeconds = 15f;
+    [Tooltip("1시간 내 최대 재시작 횟수 (rate limit/무한루프 방지)")]
+    [Range(1, 20)] public int maxRestartsPerHour = 6;
+    [Tooltip("앱 시작 후 이 시간 이내에는 강제 재시작 보류 (정상 부팅 대기)")]
+    [Range(3f, 30f)] public float initialBootGracePeriod = 10f;
+
     private HttpListener httpListener;
     private Process cloudflaredProcess;
     private int port = 3000;
@@ -31,6 +42,13 @@ public class QRServerManager : MonoBehaviour
     private readonly object _logFileLock = new object();
     private int _stderrLineCount = 0;
     private int _stdoutLineCount = 0;
+
+    // ── 자동 재시작 상태 ──
+    private volatile bool _restartRequested = false;   // 워커 스레드에서 set 가능
+    private volatile bool _intentionalKill = false;    // 재시작용 의도된 kill 표시
+    private bool _restartInProgress = false;
+    private System.DateTime _lastRestartTime = System.DateTime.MinValue;
+    private Queue<System.DateTime> _recentRestartTimes = new Queue<System.DateTime>();
 
     private void Awake()
     {
@@ -215,6 +233,8 @@ public class QRServerManager : MonoBehaviour
         InitTunnelLogFile();
 
         // ── 잔존 cloudflared 프로세스 강제 종료 (이전 실행 충돌 방지) ──
+        // _intentionalKill = true 로 표시 → Exited 이벤트가 자동재시작 루프 트리거 안 하게
+        _intentionalKill = true;
         try
         {
             var existing = System.Diagnostics.Process.GetProcessesByName("cloudflared");
@@ -236,6 +256,8 @@ public class QRServerManager : MonoBehaviour
             UnityEngine.Debug.LogWarning(msg);
             WriteTunnelLog($"[CLEANUP-ERR] {msg}");
         }
+        // 잔존 정리 완료 → 의도된 kill 플래그 해제 (이후 사망은 비정상으로 간주)
+        _intentionalKill = false;
 
         cloudflaredProcess = new Process();
         cloudflaredProcess.StartInfo.FileName = cloudflaredPath;
@@ -284,15 +306,25 @@ public class QRServerManager : MonoBehaviour
                 int code = cloudflaredProcess.ExitCode;
                 System.TimeSpan uptime = System.DateTime.Now - _tunnelStartTime;
                 string codeMeaning = ExitCodeMeaning(code);
+                bool intentional = _intentionalKill;
                 string msg = $"[EXITED] cloudflared 종료. ExitCode={code} ({codeMeaning}), " +
                              $"가동시간={uptime.TotalHours:F2}h ({uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}), " +
-                             $"stderr {_stderrLineCount}줄/stdout {_stdoutLineCount}줄";
+                             $"stderr {_stderrLineCount}줄/stdout {_stdoutLineCount}줄, intentional={intentional}";
                 UnityEngine.Debug.LogWarning("🔴 " + msg);
                 WriteTunnelLog(msg);
                 WriteTunnelLog($"[STATE] isServerReady 직전값: {isServerReady}, URL: {currentTunnelUrl}");
 
                 // 죽었으면 서버 상태 갱신 (다음 사진은 QR 없이 처리되도록)
                 isServerReady = false;
+                currentTunnelUrl = "";
+
+                // 의도된 kill (재시작용)이 아니면 자동 재시작 요청 플래그 ON
+                // Update() 가 main thread 에서 이 플래그를 보고 코루틴 실행
+                if (!intentional && autoRestartOnDeath)
+                {
+                    _restartRequested = true;
+                    WriteTunnelLog("[RESTART] 비정상 종료 감지 → 자동 재시작 요청됨");
+                }
             }
             catch (Exception ex)
             {
@@ -374,6 +406,95 @@ public class QRServerManager : MonoBehaviour
     }
 
     // ──────────────────────────────────────────
+    // 5. 자동 재시작 (cloudflared 사망 또는 수동 요청 시)
+    // ──────────────────────────────────────────
+
+    /// <summary>
+    /// 외부(PhotoCaptureManager 등)에서 명시적으로 재시작 요청.
+    /// 실제 재시작은 Update() 에서 메인 스레드로 처리됨 (스레드 안전).
+    /// 모든 가드(쿨다운, rate limit, 부팅 grace period)는 AttemptRestart() 에서 적용.
+    /// </summary>
+    public void RequestRestart()
+    {
+        _restartRequested = true;
+    }
+
+    /// <summary>
+    /// 메인 스레드 진입점. Process.Exited 는 워커 스레드에서 호출되므로
+    /// 코루틴 시작 같은 Unity API 는 여기서 처리.
+    /// </summary>
+    private void Update()
+    {
+        if (_restartRequested && !_restartInProgress)
+        {
+            _restartRequested = false;
+            StartCoroutine(AttemptRestart());
+        }
+    }
+
+    /// <summary>
+    /// 견고한 자동 재시작 코루틴. 다중 가드:
+    ///   ① 부팅 grace period 이내 → 재시작 보류 (정상 부팅 대기)
+    ///   ② 시간당 최대 횟수 초과 → 보류 (Cloudflare rate limit 보호)
+    ///   ③ 마지막 재시작 후 쿨다운 미충족 → 보류 (연속 재시작 차단)
+    /// 모든 결정은 디스크 로그에 기록 → 사후 진단 가능.
+    /// </summary>
+    private IEnumerator AttemptRestart()
+    {
+        _restartInProgress = true;
+
+        // 잠깐 양보 (Exited 이벤트 직후 즉시 재시작하면 OS가 못 따라옴)
+        yield return new WaitForSeconds(1f);
+
+        System.DateTime now = System.DateTime.Now;
+
+        // ── Guard 1: 부팅 grace period ──
+        double sinceStart = (now - _tunnelStartTime).TotalSeconds;
+        if (sinceStart < initialBootGracePeriod)
+        {
+            WriteTunnelLog($"[RESTART] ⏳ 부팅 중 ({sinceStart:F1}s < {initialBootGracePeriod}s grace) → 재시작 보류");
+            _restartInProgress = false;
+            yield break;
+        }
+
+        // ── Guard 2: 시간당 횟수 제한 ──
+        // 1시간 지난 항목 제거
+        while (_recentRestartTimes.Count > 0 && (now - _recentRestartTimes.Peek()).TotalHours >= 1.0)
+            _recentRestartTimes.Dequeue();
+
+        if (_recentRestartTimes.Count >= maxRestartsPerHour)
+        {
+            WriteTunnelLog($"[RESTART] ❌ 시간당 한도({maxRestartsPerHour})초과 → 재시작 차단. " +
+                           $"Cloudflare rate limit 우려로 1시간 후 자동 재허용.");
+            _restartInProgress = false;
+            yield break;
+        }
+
+        // ── Guard 3: 마지막 재시작 후 쿨다운 ──
+        double sinceLast = (now - _lastRestartTime).TotalSeconds;
+        if (sinceLast < restartCooldownSeconds)
+        {
+            WriteTunnelLog($"[RESTART] ⏳ 쿨다운 중 ({sinceLast:F1}s < {restartCooldownSeconds}s) → 보류");
+            _restartInProgress = false;
+            yield break;
+        }
+
+        // ── 통과! 재시작 실행 ──
+        _lastRestartTime = now;
+        _recentRestartTimes.Enqueue(now);
+        WriteTunnelLog($"[RESTART] 🔄 자동 재시작 #{_recentRestartTimes.Count}/시간 실행");
+
+        // 상태 초기화
+        isServerReady = false;
+        currentTunnelUrl = "";
+
+        // StartCloudflareTunnel 은 자체적으로 잔존 프로세스 정리 후 새로 시작
+        StartCloudflareTunnel();
+
+        _restartInProgress = false;
+    }
+
+    // ──────────────────────────────────────────
     // 3. QR 생성 (촬영 + 재합성 둘 다 호출)
     // ──────────────────────────────────────────
     public void GenerateQRCodeForFile(string fileName)
@@ -433,6 +554,8 @@ public class QRServerManager : MonoBehaviour
 
         if (cloudflaredProcess != null)
         {
+            // 앱 종료에 의한 의도된 kill → 자동 재시작 트리거 방지
+            _intentionalKill = true;
             try
             {
                 bool wasAlive = !cloudflaredProcess.HasExited;

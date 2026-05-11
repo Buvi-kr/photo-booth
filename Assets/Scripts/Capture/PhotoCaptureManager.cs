@@ -13,6 +13,16 @@ public class PhotoCaptureManager : MonoBehaviour
     [Header("결과 확인용 UI")]
     public RawImage resultPreview;
 
+    [Header("서버 미준비 안내 팝업 (선택)")]
+    [Tooltip("서버 부팅/연결 중일 때 표시할 UI. 비워두면 콘솔 경고만 출력")]
+    public GameObject serverWaitingPopup;
+    [Tooltip("팝업 내부 메시지 텍스트 (선택). 동적 메시지 표시용")]
+    public TMP_Text serverWaitingPopupText;
+    [Tooltip("팝업 자동 해제 시간 (초). 0이면 키/클릭 입력으로만 해제")]
+    [Range(0f, 10f)] public float popupAutoDismissSeconds = 3f;
+    [Tooltip("팝업 띄울 때 자동으로 cloudflared 재시작도 요청할지 여부")]
+    public bool requestServerRestartOnPopup = true;
+
     [Header("촬영 중에만 숨길 UI (찍은 후 다시 보임)")]
     public GameObject[] uiToHide;
 
@@ -36,6 +46,7 @@ public class PhotoCaptureManager : MonoBehaviour
 
     private bool isCapturing = false;
     private Coroutine _captureCoroutine;
+    private float _popupShowTime = -1f;  // 팝업이 떠있는 시점(Time.time) 추적
 
     private void Start()
     {
@@ -248,6 +259,9 @@ public class PhotoCaptureManager : MonoBehaviour
                 TakePhoto();
             }
         }
+
+        // 서버 대기 팝업 자동 해제 (키 입력 또는 타임아웃)
+        HandleServerWaitingPopupDismiss();
     }
 
     public void TakePhoto()
@@ -257,10 +271,53 @@ public class PhotoCaptureManager : MonoBehaviour
         if (QRServerManager.Instance != null && !QRServerManager.Instance.isServerReady)
         {
             Debug.LogWarning("⏳ 서버 부팅 중입니다. 잠시 후 다시 시도해주세요!");
+            ShowServerWaitingPopup();
+            // 사용자 입장에서 명시 트리거(촬영 시도)는 강한 의도 신호 →
+            // QR 서버 재시작 요청 (실제 재시작은 가드 통과해야 함, 무한루프 안전)
+            if (requestServerRestartOnPopup && QRServerManager.Instance != null)
+            {
+                QRServerManager.Instance.RequestRestart();
+            }
             return;
         }
 
         _captureCoroutine = StartCoroutine(CaptureRoutine());
+    }
+
+    /// <summary>
+    /// 서버 미준비 상태에서 촬영 트리거 시 호출. Inspector 에 popup 객체가 연결되어
+    /// 있을 때만 동작. 키 입력 또는 popupAutoDismissSeconds 후 자동 해제 (Update 에서 처리).
+    /// </summary>
+    private void ShowServerWaitingPopup()
+    {
+        if (serverWaitingPopup == null) return;
+
+        if (serverWaitingPopupText != null)
+        {
+            serverWaitingPopupText.text = "⏳ 서버 연결 중입니다.\n잠시만 기다려주세요!";
+        }
+        serverWaitingPopup.transform.SetAsLastSibling(); // 항상 최상위
+        serverWaitingPopup.SetActive(true);
+        _popupShowTime = Time.time;
+    }
+
+    /// <summary>
+    /// 팝업이 활성 상태일 때 키/클릭 입력 또는 시간 초과로 자동 해제.
+    /// Update() 에서 매 프레임 호출.
+    /// </summary>
+    private void HandleServerWaitingPopupDismiss()
+    {
+        if (serverWaitingPopup == null || !serverWaitingPopup.activeSelf) return;
+
+        bool anyInput = Input.anyKeyDown;
+        bool timedOut = popupAutoDismissSeconds > 0f &&
+                        (Time.time - _popupShowTime) >= popupAutoDismissSeconds;
+
+        if (anyInput || timedOut)
+        {
+            serverWaitingPopup.SetActive(false);
+            _popupShowTime = -1f;
+        }
     }
 
     /// <summary>
