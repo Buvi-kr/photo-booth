@@ -37,10 +37,6 @@ public class ChromaKeyController : MonoBehaviour
     private WebCamTexture _webcamTexture;
     private bool          _isInitialized = false;
 
-    // 웹캠 실제 해상도 (매 프레임 갱신 전까지 초기값)
-    private int _camWidth  = 1920;
-    private int _camHeight = 1080;
-
     // 현재 적용된 설정 (재적용 판단용)
     private BackgroundConfig _currentConfig;
     // 마지막으로 적용된 크롭 설정 (축소 시 배경 부활 방지용)

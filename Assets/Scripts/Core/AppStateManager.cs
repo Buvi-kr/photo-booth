@@ -1131,7 +1131,7 @@ public class AppStateManager : MonoBehaviour
 
     private void ApplyAdminToPreview()
     {
-        ChromaKeyController controller = Object.FindObjectOfType<ChromaKeyController>();
+        ChromaKeyController controller = Object.FindFirstObjectByType<ChromaKeyController>();
         if (controller == null) return;
 
         if (adminStep == AdminStep.GlobalChroma)

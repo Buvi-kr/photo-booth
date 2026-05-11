@@ -20,7 +20,7 @@ public class MasterSetupBuilder
     [MenuItem("PhotoBooth/👑 올인원: 전체 시스템 자동 세팅")]
     public static void RunFullSetup()
     {
-        AppStateManager appState = Object.FindObjectOfType<AppStateManager>();
+        AppStateManager appState = Object.FindFirstObjectByType<AppStateManager>();
         if (appState == null)
         {
             Debug.LogError("❌ 씬에 AppStateManager가 없습니다! 오브젝트에 먼저 붙여주세요.");
@@ -174,7 +174,7 @@ public class MasterSetupBuilder
 
     private static int EnsureOverlayBGManager(AppStateManager appState)
     {
-        OverlayBGManager overlayMgr = Object.FindObjectOfType<OverlayBGManager>();
+        OverlayBGManager overlayMgr = Object.FindFirstObjectByType<OverlayBGManager>();
         if (overlayMgr == null)
         {
             Debug.LogWarning("⚠️ [Overlay] 씬에 OverlayBGManager가 없습니다. 연결을 건너뜁니다.");
@@ -187,7 +187,7 @@ public class MasterSetupBuilder
         // chromaKeyController 슬롯 자동 연결
         if (overlayMgr.chromaKeyController == null)
         {
-            ChromaKeyController ckc = Object.FindObjectOfType<ChromaKeyController>();
+            ChromaKeyController ckc = Object.FindFirstObjectByType<ChromaKeyController>();
             if (ckc != null)
             {
                 overlayMgr.chromaKeyController = ckc;
@@ -199,7 +199,7 @@ public class MasterSetupBuilder
         // backgroundImageDisplay 슬롯 자동 연결
         if (overlayMgr.backgroundImageDisplay == null)
         {
-            RawImage[] allRaw = Object.FindObjectsOfType<RawImage>(true);
+            RawImage[] allRaw = Object.FindObjectsByType<RawImage>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var ri in allRaw)
             {
                 if (ri.GetComponent<ChromaKeyController>() != null) continue;
@@ -970,11 +970,11 @@ public class MasterSetupBuilder
         if (appState.selectVideoPlayer == null) { Debug.LogWarning("⚠️ selectVideoPlayer 미연결"); warnCount++; }
         if (appState.photoCaptureManager == null) { Debug.LogWarning("⚠️ photoCaptureManager 미연결"); warnCount++; }
 
-        if (Object.FindObjectOfType<OverlayBGManager>() == null) { Debug.LogWarning("⚠️ 씬에 OverlayBGManager가 없습니다"); warnCount++; }
+        if (Object.FindFirstObjectByType<OverlayBGManager>() == null) { Debug.LogWarning("⚠️ 씬에 OverlayBGManager가 없습니다"); warnCount++; }
 
         // 활성화된 ChromaKeyController 확인
         ChromaKeyController ckc = null;
-        foreach (var c in Object.FindObjectsOfType<ChromaKeyController>())
+        foreach (var c in Object.FindObjectsByType<ChromaKeyController>(FindObjectsSortMode.None))
         {
             if (c.gameObject.activeInHierarchy) { ckc = c; break; }
         }
@@ -985,7 +985,7 @@ public class MasterSetupBuilder
             warnCount++;
         }
 
-        if (Object.FindObjectOfType<PhotoBoothConfigLoader>() == null) { Debug.LogWarning("⚠️ 씬에 PhotoBoothConfigLoader가 없습니다"); warnCount++; }
+        if (Object.FindFirstObjectByType<PhotoBoothConfigLoader>() == null) { Debug.LogWarning("⚠️ 씬에 PhotoBoothConfigLoader가 없습니다"); warnCount++; }
 
         string saPath = Application.streamingAssetsPath;
         CheckFile(saPath, appState.loopVideoFileName, ref warnCount);
@@ -1053,7 +1053,7 @@ public class MasterSetupBuilder
         tmp.fontStyle = (TMPro.FontStyles)style;
         tmp.alignment = alignment;
         tmp.color = color;
-        tmp.enableWordWrapping = true;
+        tmp.textWrappingMode = TextWrappingModes.Normal;
         tmp.overflowMode = TextOverflowModes.Overflow;
         tmp.raycastTarget = false;
         if (font != null) tmp.font = font;
