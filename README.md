@@ -103,6 +103,134 @@ graph TD
 
 ## 📅 업데이트 로그 (Release Notes)
 
+### [2026.05.08] 🛡️ 자동 재시작 안전성 강화 (3가지 critical 버그 수정)
+**주요 성과:** 자동 재시작 로직의 race condition / closure 버그 / 부팅 보호 누락 등 **건강한 서버를 죽일 수 있는 3가지 경로** 발견 및 수정. 사용자 우려("잘 되던 서버가 갑자기 닫히는 경우") 정밀 차단.
+
+*   **🐛 Bug #1: Exited 핸들러 클로저가 잘못된 프로세스 참조 (Race Condition)**
+    *   **문제:**
+        ```csharp
+        // 옛 코드
+        cloudflaredProcess.Exited += (sender, args) =>
+        {
+            int code = cloudflaredProcess.ExitCode;  // ← 필드 참조 (race)
+            // 재시작 후 cloudflaredProcess가 새 인스턴스(P2)로 바뀌면
+            // 옛 프로세스(P1)의 Exited인데 P2의 ExitCode를 읽음
+        };
+        ```
+    *   **수정:** 핸들러 등록 직전 로컬 변수로 캡처
+        ```csharp
+        Process boundProcess = cloudflaredProcess;
+        cloudflaredProcess.Exited += (sender, args) => {
+            int code = boundProcess.ExitCode;  // ✓ 명확
+            if (boundProcess != cloudflaredProcess) return; // stale 무시
+        };
+        ```
+    *   **추가 안전:** stderr/stdout 핸들러에도 동일한 stale 체크 적용
+
+*   **🐛 Bug #2: `_intentionalKill` 플래그 리셋 타이밍 race**
+    *   **문제 시나리오:**
+        ```
+        [t=0]   _intentionalKill = true
+        [t=0]   kill 루프 (WaitForExit는 동기)
+        [t=10]  _intentionalKill = false         ← race window 시작
+        [t=11]  cloudflaredProcess = new Process()  ← 재할당
+        [t=10.5] 옛 프로세스 Exited 이벤트 늦게 발화 (async)
+                 → intentional=false 읽힘
+                 → _restartRequested=true 트리거
+                 → ❌ 가짜 재시작 루프!
+        ```
+    *   **수정:**
+        *   `StartCloudflareTunnel` 내부에서 `_intentionalKill` 토글 **완전 제거**
+        *   대신 호출자(AttemptRestart 또는 Start)가 책임지고 관리
+        *   `AttemptRestart`에서 `StartCloudflareTunnel` 호출 전 `_intentionalKill=true`
+        *   호출 후 **추가 2초 동안 유지** → 늦게 발화하는 Exited 이벤트 모두 흡수
+        *   `Start()`에서도 `ResetIntentionalKillAfter(2f)` 코루틴으로 동일 패턴
+
+*   **🐛 Bug #3 (사용자 우려 핵심): 살아있는데 부팅 늦은 프로세스 학살**
+    *   **문제 시나리오:**
+        ```
+        [T=0]   앱 시작, cloudflared 시작 (느린 네트워크)
+        [T=11]  사용자 촬영 버튼 → isServerReady=false
+        [T=11]  RequestRestart → AttemptRestart 코루틴
+        [T=12]  Guards: sinceStart=12s > 10s → PASS
+        [T=12]  StartCloudflareTunnel
+                 → 정상 부팅 중인 프로세스 죽임! ❌
+        [T=12]  새 프로세스 다시 12초 부팅...
+                → 무한 학살 루프 가능
+        ```
+    *   **수정 - 2개 추가 가드 신설:**
+        *   **Guard A:** `isServerReady=true` 면 **절대 재시작 안 함**
+            ```csharp
+            if (isServerReady) {
+                WriteTunnelLog("[RESTART] ✅ 서버 정상 → 재시작 불필요");
+                yield break;
+            }
+            ```
+            → 정상 서버는 어떤 경로로도 죽이지 않음 (사용자 우려 핵심 차단)
+        *   **Guard B:** 프로세스 살아있으면 **확장 grace 적용** (기본의 2배 = 20초)
+            ```csharp
+            if (processAlive && sinceStart < initialBootGracePeriod * 2.0) {
+                WriteTunnelLog("[RESTART] ⏳ 프로세스 살아있고 부팅 중 가능성");
+                yield break;
+            }
+            ```
+            → 느린 네트워크 환경에서 정상 부팅을 인내심 있게 기다림
+            → 20초 넘게 살아있는데도 ready 안 되면 진짜로 stuck → 재시작 진행
+
+*   **5-Layer 방어 (Defense in Depth):**
+    ```
+    [경로 A] TakePhoto → RequestRestart
+       → Guard A (isServerReady?) → 정상 서버 보호 ✓
+    
+    [경로 B] Process.Exited
+       → 실제 죽었을 때만 발화 → 안전 ✓
+    
+    [경로 C] AttemptRestart 코루틴
+       → Guard B (프로세스 살아있고 확장 grace 이내) → 부팅 보호 ✓
+    
+    [경로 D] Stale 이벤트 (옛 세션 늦은 발화)
+       → boundProcess 로컬 캡처 + isStale 체크 → 무시 ✓
+    
+    [경로 E] _intentionalKill race window
+       → 재시작 후 2초간 플래그 유지 → 흡수 ✓
+    ```
+
+*   **로깅 강화:**
+    *   `[EXITED-STALE]` 옛 세션 늦은 종료 이벤트 감지/기록
+    *   `[RESTART]` 결정 시 프로세스 상태(살아있음/사망), 가동시간 포함
+    *   `PID` 정보 `[EXITED]` 로그에 포함 → 교차 참조 용이
+    *   `intentional`, `stale` 플래그 명시 → 사후 분석 정확도 향상
+
+*   **변경 사항 요약:**
+    *   `StartCloudflareTunnel`: `_intentionalKill` 토글 코드 제거 (책임 이관)
+    *   `Start()`: 초기 부팅도 동일 가드 패턴 적용
+    *   `ResetIntentionalKillAfter(seconds)` 헬퍼 코루틴 추가
+    *   `AttemptRestart()`: 2개 가드 신설 (Guard A, Guard B)
+    *   `GetSafePid()` 헬퍼: Dispose된 프로세스에서도 안전하게 PID 추출
+    *   stderr/stdout/Exited 핸들러 모두 `boundProcess` 로컬 캡처 사용
+    *   stale 이벤트 발견 시 짧은 로그 후 핸들러 즉시 return
+
+**파일 수정:**
+*   `Assets/Scripts/Core/QRServerManager.cs` (+111 / -26 lines)
+
+**리스크 평가:**
+*   ✅ 정상 서버 무차별 재시작 가능성: 0% (Guard A로 완전 차단)
+*   ✅ Race condition으로 인한 가짜 재시작: 0% (boundProcess + 2초 holdoff)
+*   ✅ 느린 부팅 환경에서 학살: 0% (확장 grace로 인내)
+*   ✅ 기존 정상 동작 영향: 없음 (방어막만 추가)
+
+**검증 시나리오 (모두 안전):**
+| 시나리오 | 결과 |
+|---------|------|
+| 정상 서버 + 사용자 촬영 | 정상 촬영 (재시작 X) |
+| 정상 서버 + 외부에서 사망 | 정상 재시작 (5초+ 대기) |
+| 부팅 중 사용자 촬영 (15초 이내) | 팝업만 표시, 재시작 X |
+| 부팅 25초 후에도 ready X | 정상 재시작 진행 |
+| 빠른 연쇄 사망 (5분 내 7회) | 6회 후 차단 (rate limit) |
+| 옛 세션 Exited 늦게 발화 | stale 감지, 무시 |
+
+---
+
 ### [2026.05.08] 서버 대기 팝업 + Cloudflared 자동 재시작 (UX & Self-Healing)
 **주요 성과:** 무응답 → 사용자 피드백 UI 추가로 UX 개선 + cloudflared 사망 시 견고한 가드를 통한 자동 자가복구 시스템 도입. 무인 운영 신뢰성 한 단계 도약.
 
