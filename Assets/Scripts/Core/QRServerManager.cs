@@ -71,17 +71,13 @@ public class QRServerManager : MonoBehaviour
 
         StartLocalWebServer();
 
-        // 초기 부팅 시에는 우리 핸들러가 아직 어떤 프로세스에도 안 붙어있어서
-        // _intentionalKill 토글이 필수는 아니지만, 일관성을 위해 가드함
-        _intentionalKill = true;
+        // 초기 부팅: _intentionalKill 플래그를 켜지 않음.
+        // 이유: 우리 Exited 핸들러는 NEW 프로세스에 붙으므로
+        //       NEW 프로세스가 자체 에러로 죽으면 즉시 자동 재시작해야 함.
+        //       (Cloudflare 서버 일시 장애 등으로 첫 부팅 실패 시 빠른 복구)
+        // 잔존 프로세스 청소는 StartCloudflareTunnel 내부에서 별도 처리
+        //   (그것들의 Exited는 우리 핸들러에 안 붙어있어서 무영향)
         StartCloudflareTunnel();
-        StartCoroutine(ResetIntentionalKillAfter(2f));
-    }
-
-    private IEnumerator ResetIntentionalKillAfter(float seconds)
-    {
-        yield return new WaitForSeconds(seconds);
-        _intentionalKill = false;
     }
 
     // ──────────────────────────────────────────
@@ -324,16 +320,28 @@ public class QRServerManager : MonoBehaviour
                 try { code = boundProcess.ExitCode; } catch { /* 이미 dispose된 경우 */ }
                 System.TimeSpan uptime = System.DateTime.Now - _tunnelStartTime;
                 string codeMeaning = ExitCodeMeaning(code);
-                bool intentional = _intentionalKill;
+                bool inRestartWindow = _intentionalKill;
                 bool isStale = (boundProcess != cloudflaredProcess);
+
+                // 사망 원인 추정 (사용자 친화적 진단)
+                //   ExitCode == -1     → 우리가 Kill() 호출함 (의도된 종료)
+                //   ExitCode == 0      → cloudflared 정상 자체 종료
+                //   ExitCode != 0,-1   → cloudflared 자체 에러로 종료 (재시작 필요)
+                bool weKilledIt = (code == -1);
+                bool selfExitedWithError = (code != 0 && code != -1);
+                string deathCause;
+                if (weKilledIt)              deathCause = "우리가 Kill 호출 (재시작/종료 흐름)";
+                else if (code == 0)          deathCause = "정상 자체 종료";
+                else                          deathCause = "cloudflared 자체 에러 종료 ⚠️ (재시작 필요)";
 
                 string msg = $"[EXITED] cloudflared 종료. PID={GetSafePid(boundProcess)}, " +
                              $"ExitCode={code} ({codeMeaning}), " +
                              $"가동시간={uptime.TotalHours:F2}h ({uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}), " +
-                             $"stderr {_stderrLineCount}줄/stdout {_stdoutLineCount}줄, " +
-                             $"intentional={intentional}, stale={isStale}";
+                             $"stderr {_stderrLineCount}줄/stdout {_stdoutLineCount}줄";
                 UnityEngine.Debug.LogWarning("🔴 " + msg);
                 WriteTunnelLog(msg);
+                WriteTunnelLog($"[EXITED] 사망 원인: {deathCause}");
+                WriteTunnelLog($"[EXITED] 진단 플래그: in_restart_sequence={inRestartWindow}, stale={isStale}");
 
                 // ★ stale 프로세스의 늦은 종료 이벤트 → 현재 세션에 영향 X
                 //   현 활성 프로세스(cloudflaredProcess) 상태 건드리지 말고 종료
@@ -349,12 +357,26 @@ public class QRServerManager : MonoBehaviour
                 isServerReady = false;
                 currentTunnelUrl = "";
 
-                // 의도된 kill (재시작용)이 아니면 자동 재시작 요청 플래그 ON
-                // Update() 가 main thread 에서 이 플래그를 보고 코루틴 실행
-                if (!intentional && autoRestartOnDeath)
+                // ── 자동 재시작 결정 로직 (간소화된 의미론) ──
+                //   skip 조건: 우리가 Kill 했거나(`weKilledIt`) AttemptRestart 진행 중(`inRestartWindow`)
+                //   queue 조건: cloudflared 자체 사망 → 자동 재시작 큐잉 → 가드가 최종 결정
+                //   startup grace 구간에서 자체 에러로 죽어도 큐잉됨 → 더 빠른 자가 복구
+                if (!autoRestartOnDeath)
+                {
+                    WriteTunnelLog("[RESTART] autoRestartOnDeath=false → 재시작 비활성");
+                }
+                else if (weKilledIt || inRestartWindow)
+                {
+                    WriteTunnelLog($"[RESTART] 의도된 종료 흐름 (weKilled={weKilledIt}, inRestartSeq={inRestartWindow}) → 큐잉 안 함");
+                }
+                else if (selfExitedWithError)
                 {
                     _restartRequested = true;
-                    WriteTunnelLog("[RESTART] 비정상 종료 감지 → 자동 재시작 요청됨");
+                    WriteTunnelLog($"[RESTART] cloudflared 자체 에러 사망 (ExitCode={code}) → 자동 재시작 큐잉됨");
+                }
+                else  // code == 0 (정상 종료)
+                {
+                    WriteTunnelLog($"[RESTART] 정상 종료(ExitCode=0) → 재시작 큐잉 안 함");
                 }
             }
             catch (Exception ex)
