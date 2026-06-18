@@ -49,6 +49,7 @@ public class QRServerManager : MonoBehaviour
     private bool _restartInProgress = false;
     private System.DateTime _lastRestartTime = System.DateTime.MinValue;
     private Queue<System.DateTime> _recentRestartTimes = new Queue<System.DateTime>();
+    private bool _isInternetDown = false;
 
     private void Awake()
     {
@@ -78,6 +79,9 @@ public class QRServerManager : MonoBehaviour
         // 잔존 프로세스 청소는 StartCloudflareTunnel 내부에서 별도 처리
         //   (그것들의 Exited는 우리 핸들러에 안 붙어있어서 무영향)
         StartCloudflareTunnel();
+
+        // 헬스체크 및 자가감지 시스템 시작
+        StartCoroutine(HealthCheckRoutine());
     }
 
     // ──────────────────────────────────────────
@@ -132,8 +136,16 @@ public class QRServerManager : MonoBehaviour
 
                 string rawPath = request.Url.AbsolutePath;
 
+                if (rawPath == "/health")
+                {
+                    response.StatusCode = (int)HttpStatusCode.OK;
+                    byte[] buffer = System.Text.Encoding.UTF8.GetBytes("OK");
+                    response.ContentType = "text/plain; charset=utf-8";
+                    response.ContentLength64 = buffer.Length;
+                    await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                }
                 // /raw/파일명 → 실제 이미지 파일 전송
-                if (rawPath.StartsWith("/raw/"))
+                else if (rawPath.StartsWith("/raw/"))
                 {
                     string fileName = rawPath.Substring("/raw/".Length);
                     string filePath = Path.Combine(photoDirectory, fileName);
@@ -478,6 +490,27 @@ public class QRServerManager : MonoBehaviour
     /// </summary>
     private void Update()
     {
+        // 인터넷 복구 감지 시 즉시 재시작 트리거
+        if (_isInternetDown && Application.internetReachability != NetworkReachability.NotReachable)
+        {
+            WriteTunnelLog("[RESTART] 🌐 인터넷 연결 복구 감지 -> 터널 재시작을 즉시 요청합니다.");
+            _isInternetDown = false;
+            RequestRestart();
+        }
+
+        // 결과 화면(Result) 상태에서 홈 화면으로 이동했거나, 서버가 죽었는데 Result 상태가 아닐 때 
+        // 헬스체크에서 유예되었던 재시작을 즉시 요청
+        if (!isServerReady && !_restartRequested && !_restartInProgress && 
+            cloudflaredProcess != null && 
+            (AppStateManager.Instance == null || AppStateManager.Instance.CurrentState != AppState.Result))
+        {
+            if (Application.internetReachability != NetworkReachability.NotReachable)
+            {
+                WriteTunnelLog("[RESTART] 🔄 결과 화면(Result)을 벗어났거나 유예 조건이 해제되어 보류되었던 터널 재시작을 요청합니다.");
+                RequestRestart();
+            }
+        }
+
         if (_restartRequested && !_restartInProgress)
         {
             _restartRequested = false;
@@ -492,6 +525,7 @@ public class QRServerManager : MonoBehaviour
     ///   ③ 시간당 최대 횟수 초과 → 보류 (Cloudflare rate limit 보호)
     ///   ④ 마지막 재시작 후 쿨다운 미충족 → 보류 (연속 재시작 차단)
     ///   ⑤ 이미 isServerReady=true 면 → 보류 (정상 서버 보호)  ★ NEW
+    ///   ⑥ 인터넷 연결 단절 시 → 보류 (인터넷 복구 대기) ★ NEW
     /// 통과 시:
     ///   - _intentionalKill 을 코루틴 전체 동안 유지 (Exited race 방지)
     ///   - 2초 추가 holdoff 후 false 로 해제 → 이전 세션 Exited 흡수
@@ -510,6 +544,15 @@ public class QRServerManager : MonoBehaviour
         if (isServerReady)
         {
             WriteTunnelLog($"[RESTART] ✅ 서버 정상(isServerReady=true) → 재시작 불필요, 보류");
+            _restartInProgress = false;
+            yield break;
+        }
+
+        // ── Guard Internet (NEW): 인터넷 연결 없음 감지 시 대기 ──
+        if (Application.internetReachability == NetworkReachability.NotReachable)
+        {
+            WriteTunnelLog("[RESTART] 🔌 인터넷 연결 없음 -> 재시작 보류 (인터넷 복구 대기)");
+            _isInternetDown = true;
             _restartInProgress = false;
             yield break;
         }
@@ -614,7 +657,15 @@ public class QRServerManager : MonoBehaviour
 
         string fullUrl = $"{currentTunnelUrl}/{fileName}";
 
-        if (qrCodeDisplay != null) qrCodeDisplay.texture = null;
+        if (qrCodeDisplay != null)
+        {
+            // [리팩토링] 기존 QR 텍스처 메모리 누수 방지
+            if (qrCodeDisplay.texture != null)
+            {
+                Destroy(qrCodeDisplay.texture);
+            }
+            qrCodeDisplay.texture = null;
+        }
         StartCoroutine(DownloadQRCode(fullUrl));
     }
 
@@ -629,12 +680,115 @@ public class QRServerManager : MonoBehaviour
             if (uwr.result == UnityWebRequest.Result.Success)
             {
                 Texture2D texture = DownloadHandlerTexture.GetContent(uwr);
-                if (qrCodeDisplay != null) qrCodeDisplay.texture = texture;
+                if (qrCodeDisplay != null)
+                {
+                    // [리팩토링] 새로운 텍스처 대입 전 기존 텍스처 명시적 파괴 (메모리 누수 방지)
+                    if (qrCodeDisplay.texture != null)
+                    {
+                        Destroy(qrCodeDisplay.texture);
+                    }
+                    qrCodeDisplay.texture = texture;
+                }
                 UnityEngine.Debug.Log($"[QR] 생성 완료: {url}");
             }
             else
             {
                 UnityEngine.Debug.LogError("⚠️ QR 생성 실패: " + uwr.error);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 터널 외부 주소로 주기적 헬스 체크를 전송하여 상태를 감시하는 코루틴.
+    /// 일시적인 오류로 인한 URL 변경 방지 및 인터넷 단절/사용자 스캔 중 상태 대응.
+    /// </summary>
+    private IEnumerator HealthCheckRoutine()
+    {
+        // 최초 시작 시 cloudflared 부팅을 고려하여 10초 대기
+        yield return new WaitForSeconds(10f);
+
+        int consecutiveFailures = 0;
+
+        while (true)
+        {
+            yield return new WaitForSeconds(10f);
+
+            // 아직 주소가 없거나 서버 준비 중인 상태라면 실패 횟수를 리셋하고 스킵
+            if (string.IsNullOrEmpty(currentTunnelUrl) || !isServerReady)
+            {
+                consecutiveFailures = 0;
+                continue;
+            }
+
+            string healthUrl = $"{currentTunnelUrl}/health";
+            using (UnityWebRequest uwr = UnityWebRequest.Get(healthUrl))
+            {
+                uwr.timeout = 5; // 5초 타임아웃
+                yield return uwr.SendWebRequest();
+
+                bool isSuccess = false;
+                if (uwr.result == UnityWebRequest.Result.Success)
+                {
+                    if (uwr.responseCode == 200)
+                    {
+                        isSuccess = true;
+                    }
+                }
+
+                if (isSuccess)
+                {
+                    if (consecutiveFailures > 0)
+                    {
+                        WriteTunnelLog($"[HEALTH] ✅ 터널 헬스 체크 성공으로 복구됨 (URL: {currentTunnelUrl})");
+                    }
+                    consecutiveFailures = 0;
+
+                    // 헬스체크는 성공했으나 isServerReady가 꺼져있던 경우 (터널 자동 재연결 성공 시)
+                    if (!isServerReady)
+                    {
+                        isServerReady = true;
+                        WriteTunnelLog("[HEALTH] ✅ 터널 자가 연결 성공 감지 -> isServerReady 복원");
+                    }
+                }
+                else
+                {
+                    consecutiveFailures++;
+                    string errorDetail = uwr.result == UnityWebRequest.Result.ConnectionError 
+                        ? "네트워크 연결 불가" 
+                        : $"상태코드: {uwr.responseCode} / {uwr.error}";
+
+                    WriteTunnelLog($"[HEALTH] ⚠️ 터널 헬스 체크 실패 ({consecutiveFailures}회 연속): {errorDetail}");
+
+                    if (consecutiveFailures >= 3)
+                    {
+                        WriteTunnelLog("[HEALTH] ❌ 터널 3회 연속 헬스 체크 실패. 장애 대응 로직을 작동합니다.");
+
+                        // 1. 로컬 인터넷 상태 체크
+                        if (Application.internetReachability == NetworkReachability.NotReachable)
+                        {
+                            WriteTunnelLog("[HEALTH] 🔌 공유기 끊김 등 로컬 인터넷 단절 감지 -> 재시작을 유예하고 복구를 기다립니다.");
+                            isServerReady = false;
+                            _isInternetDown = true;
+                        }
+                        else
+                        {
+                            // 2. 사용자가 결과화면에서 QR 코드를 보는 중인지 체크
+                            if (AppStateManager.Instance != null && AppStateManager.Instance.CurrentState == AppState.Result)
+                            {
+                                WriteTunnelLog("[HEALTH] ⏳ 사용자가 결과 화면(QR)을 스캔 중일 수 있으므로 터널 재시작을 일시 유예합니다. 메인화면 복귀 시 자동 재시작됩니다.");
+                                isServerReady = false;
+                            }
+                            else
+                            {
+                                // 3. 인터넷은 연결되어 있는데 터널 프로세스만 이상이 있는 상태 -> 재시작 진행
+                                WriteTunnelLog("[HEALTH] 🌐 인터넷은 작동 중이나 터널만 연결이 해제되었습니다 -> 터널 재시작 요청");
+                                isServerReady = false;
+                                RequestRestart();
+                                consecutiveFailures = 0;
+                            }
+                        }
+                    }
+                }
             }
         }
     }

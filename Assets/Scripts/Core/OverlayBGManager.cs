@@ -37,6 +37,7 @@ public class OverlayBGManager : MonoBehaviour
     private Texture2D _loadedTexture;      // 배경 텍스처
     private Texture2D _loadedFrontTexture; // 전경 텍스처
     private Texture2D[] _thumbTextures;    // 썸네일 텍스처 배열
+    private Sprite[] _createdThumbSprites;  // [리팩토링] 생성된 썸네일 스프라이트 배열 (메모리 누수 방지용)
 
     // ── 라이프사이클 ──────────────────────────────────────────────────────────
 
@@ -73,6 +74,13 @@ public class OverlayBGManager : MonoBehaviour
             foreach (var t in _thumbTextures)
                 if (t != null) Destroy(t);
             _thumbTextures = null;
+        }
+
+        if (_createdThumbSprites != null)
+        {
+            foreach (var s in _createdThumbSprites)
+                if (s != null) Destroy(s);
+            _createdThumbSprites = null;
         }
     }
 
@@ -142,8 +150,16 @@ public class OverlayBGManager : MonoBehaviour
         {
             foreach (var t in _thumbTextures) if (t != null) Destroy(t);
         }
+
+        // [리팩토링] 기존 동적 생성 스프라이트 파괴 (메모리 누수 방지)
+        if (_createdThumbSprites != null)
+        {
+            foreach (var s in _createdThumbSprites) if (s != null) Destroy(s);
+        }
+
         int btnCount = bgThumbnailButtons.Length;
         _thumbTextures = new Texture2D[btnCount];
+        _createdThumbSprites = new Sprite[btnCount];
 
         Debug.Log($"[OverlayBGManager] 썸네일 세팅 시작: 버튼 {btnCount}개, 설정 배경 {count}개");
 
@@ -184,7 +200,9 @@ public class OverlayBGManager : MonoBehaviour
                 Image btnImg = bgThumbnailButtons[i].GetComponent<Image>();
                 if (btnImg != null)
                 {
-                    btnImg.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                    Sprite newSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                    btnImg.sprite = newSprite;
+                    _createdThumbSprites[i] = newSprite;
                     Debug.Log($"[Overlay] 버튼 {i}번 이미지 로드 성공: {Path.GetFileName(thumbPath)}");
                 }
                 else
